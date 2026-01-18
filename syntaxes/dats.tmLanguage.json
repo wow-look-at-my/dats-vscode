@@ -1,0 +1,140 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "DATS",
+  "scopeName": "source.dats",
+  "patterns": [
+    { "include": "#cmd-line" },
+    { "include": "#placeholders" },
+    { "include": "source.yaml" }
+  ],
+  "repository": {
+    "cmd-line": {
+      "comment": "Match cmd: <value> and highlight value as shell command",
+      "begin": "^(\\s*)(cmd)(:\\s*)",
+      "beginCaptures": {
+        "2": { "name": "entity.name.tag.yaml" },
+        "3": { "name": "punctuation.separator.key-value.yaml" }
+      },
+      "end": "$",
+      "patterns": [
+        { "include": "#shell-command" }
+      ]
+    },
+    "shell-command": {
+      "patterns": [
+        { "include": "#placeholders" },
+        { "include": "#shell-strings" },
+        { "include": "#shell-operators" },
+        { "include": "#shell-variables" },
+        { "include": "#shell-command-word" },
+        { "include": "#shell-long-arg-with-value" },
+        { "include": "#shell-long-arg" },
+        { "include": "#shell-short-arg" },
+        { "include": "#shell-arg" }
+      ]
+    },
+    "shell-command-word": {
+      "comment": "First word is the command",
+      "match": "(?<=:\\s*)([a-zA-Z0-9_./+-]+)",
+      "captures": {
+        "1": { "name": "entity.name.function.shell" }
+      }
+    },
+    "shell-long-arg-with-value": {
+      "comment": "Long args with value like --foo=bar or --foo bar",
+      "match": "(--[a-zA-Z0-9][-a-zA-Z0-9]*)(=)([^\\s]+)?",
+      "captures": {
+        "1": { "name": "entity.other.attribute-name.shell" },
+        "2": { "name": "keyword.operator.assignment.shell" },
+        "3": { "name": "string.unquoted.argument.shell" }
+      }
+    },
+    "shell-long-arg": {
+      "comment": "Long args like --verbose",
+      "match": "--[a-zA-Z0-9][-a-zA-Z0-9]*",
+      "name": "entity.other.attribute-name.shell"
+    },
+    "shell-short-arg": {
+      "comment": "Short args like -v or -rf",
+      "match": "(?<=\\s)-[a-zA-Z0-9]+",
+      "name": "constant.other.option.shell"
+    },
+    "shell-arg": {
+      "comment": "Regular arguments",
+      "match": "(?<=\\s)(?!-)[^\\s'\"$|&;><]+",
+      "name": "string.unquoted.argument.shell"
+    },
+    "shell-variables": {
+      "patterns": [
+        {
+          "comment": "Variables like $FOO or ${FOO}",
+          "name": "variable.other.shell",
+          "match": "\\$(?:[a-zA-Z_][a-zA-Z0-9_]*|\\{[^}]+\\})"
+        },
+        {
+          "comment": "Command substitution $()",
+          "name": "string.interpolated.shell",
+          "begin": "\\$\\(",
+          "end": "\\)",
+          "patterns": [
+            { "include": "#shell-command" }
+          ]
+        }
+      ]
+    },
+    "shell-strings": {
+      "patterns": [
+        {
+          "comment": "Single quoted string",
+          "name": "string.quoted.single.shell",
+          "begin": "'",
+          "end": "'"
+        },
+        {
+          "comment": "Double quoted string",
+          "name": "string.quoted.double.shell",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "variable.other.shell",
+              "match": "\\$(?:[a-zA-Z_][a-zA-Z0-9_]*|\\{[^}]+\\})"
+            },
+            { "include": "#placeholders" }
+          ]
+        }
+      ]
+    },
+    "shell-operators": {
+      "patterns": [
+        {
+          "comment": "Pipes and logical operators",
+          "name": "keyword.operator.pipe.shell",
+          "match": "\\|\\||&&|\\|"
+        },
+        {
+          "comment": "Redirects",
+          "name": "keyword.operator.redirect.shell",
+          "match": "2>&1|>>|>|<"
+        },
+        {
+          "comment": "Statement separator",
+          "name": "punctuation.terminator.shell",
+          "match": ";"
+        }
+      ]
+    },
+    "placeholders": {
+      "patterns": [
+        {
+          "name": "variable.parameter.dats",
+          "match": "\\{inputs\\.[^}]+\\}"
+        },
+        {
+          "name": "variable.parameter.dats",
+          "match": "\\{outputs\\.[^}]+\\}"
+        }
+      ]
+    }
+  }
+}

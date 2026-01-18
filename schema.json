@@ -1,0 +1,155 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/mhaynie/bats-declarative/schema.json",
+  "title": "DATS Test File",
+  "description": "Schema for Declarative Automated Testing System (.dats) files",
+  "type": "object",
+  "required": ["tests"],
+  "properties": {
+    "tests": {
+      "type": "array",
+      "description": "Array of test cases",
+      "items": {
+        "$ref": "#/definitions/test"
+      }
+    }
+  },
+  "definitions": {
+    "test": {
+      "type": "object",
+      "required": ["cmd"],
+      "properties": {
+        "desc": {
+          "type": "string",
+          "description": "Optional description of the test case"
+        },
+        "cmd": {
+          "type": "string",
+          "description": "Command to execute. Use {inputs.X} and {outputs.X} placeholders for file paths."
+        },
+        "exit": {
+          "description": "Expected exit code (0-255) or EXIT_* variable name",
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            {
+              "type": "string",
+              "pattern": "^EXIT_[A-Z_]+$"
+            }
+          ],
+          "default": 0
+        },
+        "inputs": {
+          "$ref": "#/definitions/inputBlock"
+        },
+        "outputs": {
+          "$ref": "#/definitions/outputBlock"
+        }
+      },
+      "additionalProperties": false
+    },
+    "inputBlock": {
+      "type": "object",
+      "description": "Input configuration",
+      "properties": {
+        "stdin": {
+          "type": "string",
+          "description": "Content to pipe to command's stdin"
+        },
+        "files": {
+          "type": "object",
+          "description": "Input files to create before running the command",
+          "additionalProperties": {
+            "type": "string",
+            "description": "File content"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputBlock": {
+      "type": "object",
+      "description": "Output validation block",
+      "properties": {
+        "stdout": {
+          "$ref": "#/definitions/outputCheck",
+          "description": "Regex patterns to match in stdout"
+        },
+        "stderr": {
+          "$ref": "#/definitions/outputCheck",
+          "description": "Regex patterns to match in stderr"
+        },
+        "!stdout": {
+          "$ref": "#/definitions/outputCheck",
+          "description": "Regex patterns that must NOT appear in stdout"
+        },
+        "!stderr": {
+          "$ref": "#/definitions/outputCheck",
+          "description": "Regex patterns that must NOT appear in stderr"
+        },
+        "files": {
+          "type": "object",
+          "description": "Output files to validate",
+          "additionalProperties": {
+            "$ref": "#/definitions/fileCheck"
+          }
+        },
+        "!files": {
+          "type": "object",
+          "description": "Negative output file assertions",
+          "additionalProperties": {
+            "$ref": "#/definitions/fileCheck"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputCheck": {
+      "description": "Output validation - either a list of patterns or line-specific checks",
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of regex patterns to match anywhere in output"
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Map of line numbers (0-indexed) to regex patterns"
+        }
+      ]
+    },
+    "fileCheck": {
+      "type": "object",
+      "description": "Validation for an output file",
+      "properties": {
+        "exists": {
+          "type": "boolean",
+          "description": "Whether the file should exist"
+        },
+        "match": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Regex patterns that must match in the file"
+        },
+        "notMatch": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Regex patterns that must NOT match in the file"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
