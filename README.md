@@ -2,7 +2,7 @@
 
 Language support for `.dats` test definition files.
 
-DATS is a declarative YAML format for defining command-line tests that compile to [BATS](https://github.com/bats-core/bats-core) (Bash Automated Testing System).
+DATS is a declarative YAML format for defining command-line tests, executed natively by the [dats runner](https://github.com/wow-look-at-my/dats).
 
 ## Features
 
@@ -22,8 +22,9 @@ tests:
 
   - desc: cat reads file
     inputs:
-      input.txt: |
-        Hello, world!
+      files:
+        input.txt: |
+          Hello, world!
     cmd: cat {inputs.input.txt}
     outputs:
       stdout:
@@ -31,7 +32,8 @@ tests:
 
   - desc: grep returns 1 when not found
     exit: 1
-    stdin: "hello world"
+    inputs:
+      stdin: "hello world"
     cmd: grep -q "notfound"
 ```
 
@@ -45,17 +47,26 @@ tests:
 
 ## Requirements
 
-To run the generated tests, install the [dats CLI](https://github.com/mhaynie/bats-declarative) and BATS:
+To run tests, install the [dats runner](https://github.com/wow-look-at-my/dats):
 
 ```bash
-# Generate BATS tests
-dats tests.dats output/
-
 # Run tests
-bats output/*.gen.bats
+dats test tests.dats
+
+# Validate syntax without running
+dats syntax tests.dats
 ```
+
+## Schema Provenance
+
+The bundled [`schema.json`](https://github.com/wow-look-at-my/dats-vscode/blob/master/schema.json) mirrors the canonical
+[`schema.json`](https://github.com/wow-look-at-my/dats/blob/master/schema.json) in the
+[dats runner](https://github.com/wow-look-at-my/dats) repository, which is the source of
+truth for `.dats` semantics. When the runner's schema changes, re-copy it here.
+
+Current copy: synced from [wow-look-at-my/dats#17](https://github.com/wow-look-at-my/dats/pull/17)
+(enforced-semantics schema, pending merge) at commit `66973ca`.
 
 ## Links
 
-- [DATS CLI & Documentation](https://github.com/mhaynie/bats-declarative)
-- [BATS Core](https://github.com/bats-core/bats-core)
+- [DATS Runner & Documentation](https://github.com/wow-look-at-my/dats)
