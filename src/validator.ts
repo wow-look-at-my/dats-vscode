@@ -2,6 +2,9 @@ import * as vscode from 'vscode';
 import { parseDocument, YAMLParseError, isMap, isSeq, Scalar, YAMLMap, YAMLSeq, LineCounter } from 'yaml';
 
 const EXIT_VAR_PATTERN = /^EXIT_[A-Z_]+$/;
+// Go time.ParseDuration syntax (dats rejects negative timeouts, so no leading minus):
+// optional +, then "0" or one or more <decimal number><unit> groups.
+const GO_DURATION_PATTERN = /^\+?(0|((\d+(\.\d*)?|\.\d+)(ns|us|µs|μs|ms|s|m|h))+)$/;
 
 export function validateDatsDocument(document: vscode.TextDocument): vscode.Diagnostic[] {
     const diagnostics: vscode.Diagnostic[] = [];
@@ -76,7 +79,7 @@ export function validateDatsDocument(document: vscode.TextDocument): vscode.Diag
 }
 
 function validateTest(test: YAMLMap, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
-    const validKeys = new Set(['desc', 'exit', 'cmd', 'inputs', 'outputs']);
+    const validKeys = new Set(['desc', 'exit', 'cmd', 'timeout', 'inputs', 'outputs']);
 
     // Check for unknown keys
     for (const item of test.items) {
@@ -98,6 +101,12 @@ function validateTest(test: YAMLMap, lineCounter: LineCounter, document: vscode.
     const exitPair = test.items.find(item => item.key instanceof Scalar && item.key.value === 'exit');
     if (exitPair && exitPair.value) {
         validateExitCode(exitPair.value, lineCounter, document, diagnostics);
+    }
+
+    // Validate timeout
+    const timeoutPair = test.items.find(item => item.key instanceof Scalar && item.key.value === 'timeout');
+    if (timeoutPair && timeoutPair.value) {
+        validateTimeout(timeoutPair.value, lineCounter, document, diagnostics);
     }
 
     // Validate inputs if present
@@ -130,6 +139,23 @@ function validateExitCode(node: any, lineCounter: LineCounter, document: vscode.
     }
 }
 
+function validateTimeout(node: any, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
+    if (!(node instanceof Scalar)) return;
+
+    const value = node.value;
+    const range = nodeRange(node, lineCounter, document);
+
+    if (typeof value === 'number') {
+        if (!Number.isInteger(value) || value < 0) {
+            diagnostics.push(new vscode.Diagnostic(range, 'Timeout must be a non-negative integer number of seconds or a Go duration string (e.g. "500ms", "1m30s")', vscode.DiagnosticSeverity.Error));
+        }
+    } else if (typeof value === 'string') {
+        if (!GO_DURATION_PATTERN.test(value)) {
+            diagnostics.push(new vscode.Diagnostic(range, `Timeout "${value}" must be a non-negative integer number of seconds or a Go duration string (e.g. "500ms", "1m30s")`, vscode.DiagnosticSeverity.Error));
+        }
+    }
+}
+
 function validateInputs(inputs: YAMLMap, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
     const validKeys = new Set(['stdin', 'files']);
 
@@ -143,7 +169,7 @@ function validateInputs(inputs: YAMLMap, lineCounter: LineCounter, document: vsc
 }
 
 function validateOutputs(outputs: YAMLMap, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
-    const validKeys = new Set(['stdout', 'stderr', '!stdout', '!stderr', 'files', '!files']);
+    const validKeys = new Set(['stdout', 'stderr', '!stdout', '!stderr', 'files', '!files', 'json_output']);
 
     for (const item of outputs.items) {
         const key = item.key;

@@ -8,7 +8,8 @@ DATS is a declarative YAML format for defining command-line tests, executed nati
 
 - Syntax highlighting for `.dats` files
 - JSON Schema validation with inline error reporting
-- Code snippets for common test patterns
+- Completions for test keys and `{inputs.X}` / `{outputs.X}` placeholders
+- Hover documentation for test fields
 
 ## Example
 
@@ -36,14 +37,6 @@ tests:
       stdin: "hello world"
     cmd: grep -q "notfound"
 ```
-
-## Snippets
-
-| Prefix | Description |
-|--------|-------------|
-| `test` | Basic test case |
-| `test-stdin` | Test with stdin input |
-| `test-file` | Test with input file |
 
 ## Requirements
 
