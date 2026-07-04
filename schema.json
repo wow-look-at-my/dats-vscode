@@ -1,14 +1,20 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/mhaynie/bats-declarative/schema.json",
+  "$id": "https://github.com/wow-look-at-my/dats/schema.json",
   "title": "DATS Test File",
   "description": "Schema for Declarative Automated Testing System (.dats) files",
   "type": "object",
   "required": ["tests"],
+  "additionalProperties": false,
   "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional reference to this JSON Schema"
+    },
     "tests": {
       "type": "array",
-      "description": "Array of test cases",
+      "minItems": 1,
+      "description": "Array of test cases (at least one; the runner rejects an empty array)",
       "items": {
         "$ref": "#/definitions/test"
       }
@@ -18,6 +24,7 @@
     "test": {
       "type": "object",
       "required": ["cmd"],
+      "additionalProperties": false,
       "properties": {
         "desc": {
           "type": "string",
@@ -25,10 +32,11 @@
         },
         "cmd": {
           "type": "string",
-          "description": "Command to execute. Use {inputs.X} and {outputs.X} placeholders for file paths."
+          "description": "Command to execute (via bash -c). {inputs.X} expands to the absolute path of the declared input file X; {outputs.X} expands to an absolute path in the test's private outputs directory (no outputs.files check required). The same expansion is applied to inputs.files contents."
         },
         "exit": {
-          "description": "Expected exit code (0-255) or EXIT_* variable name",
+          "description": "Expected exit code (0-255) or exit code name (default 0)",
+          "default": 0,
           "oneOf": [
             {
               "type": "integer",
@@ -37,10 +45,22 @@
             },
             {
               "type": "string",
-              "pattern": "^EXIT_[A-Z_]+$"
+              "enum": ["EXIT_SUCCESS", "EXIT_FAILURE"],
+              "$comment": "Only the names the runner resolves (EXIT_SUCCESS=0, EXIT_FAILURE=1); any other EXIT_* name is rejected at parse time because it could never pass a run."
             }
-          ],
-          "default": 0
+          ]
+        },
+        "timeout": {
+          "description": "Optional per-test timeout: an integer number of seconds, or a Go duration string (e.g. \"500ms\", \"2s\", \"1m30s\"). 0 or omitted means no timeout.",
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "inputs": {
           "$ref": "#/definitions/inputBlock"
@@ -48,87 +68,93 @@
         "outputs": {
           "$ref": "#/definitions/outputBlock"
         }
-      },
-      "additionalProperties": false
+      }
     },
     "inputBlock": {
       "type": "object",
-      "description": "Input configuration",
+      "description": "Inputs provided to the command",
+      "additionalProperties": false,
       "properties": {
         "stdin": {
           "type": "string",
-          "description": "Content to pipe to command's stdin"
+          "description": "Content piped to the command's stdin"
         },
         "files": {
           "type": "object",
-          "description": "Input files to create before running the command",
+          "description": "Fixture files to create before running, mapping filename to content. Contents go through the same {inputs.X}/{outputs.X} placeholder expansion as cmd.",
           "additionalProperties": {
             "type": "string",
-            "description": "File content"
+            "description": "File content ({inputs.X}/{outputs.X} placeholders are expanded)"
           }
         }
-      },
-      "additionalProperties": false
+      }
     },
     "outputBlock": {
       "type": "object",
       "description": "Output validation block",
+      "additionalProperties": false,
       "properties": {
         "stdout": {
           "$ref": "#/definitions/outputCheck",
-          "description": "Regex patterns to match in stdout"
+          "description": "Stdout checks. Array form: literal substrings that must each appear anywhere in stdout. Map form: 0-indexed line number to regex that must match (unanchored search) within that line; addressing a nonexistent line fails."
         },
         "stderr": {
           "$ref": "#/definitions/outputCheck",
-          "description": "Regex patterns to match in stderr"
+          "description": "Stderr checks. Array form: literal substrings that must each appear anywhere in stderr. Map form: 0-indexed line number to regex that must match (unanchored search) within that line; addressing a nonexistent line fails."
         },
         "!stdout": {
           "$ref": "#/definitions/outputCheck",
-          "description": "Regex patterns that must NOT appear in stdout"
+          "description": "Negated stdout checks. Array form: literal substrings that must NOT appear anywhere in stdout. Map form: 0-indexed line number to regex that must NOT match (unanchored search) within that line; a nonexistent line passes."
         },
         "!stderr": {
           "$ref": "#/definitions/outputCheck",
-          "description": "Regex patterns that must NOT appear in stderr"
+          "description": "Negated stderr checks. Array form: literal substrings that must NOT appear anywhere in stderr. Map form: 0-indexed line number to regex that must NOT match (unanchored search) within that line; a nonexistent line passes."
         },
         "files": {
           "type": "object",
-          "description": "Output files to validate",
+          "description": "Output file validations, mapping filename to checks",
           "additionalProperties": {
             "$ref": "#/definitions/fileCheck"
           }
         },
         "!files": {
           "type": "object",
-          "description": "Negative output file assertions",
+          "description": "Negated output file validations, mapping filename to checks. Each check is inverted: exists is flipped (exists: true means the file must NOT exist), match patterns must NOT match the contents (a missing file passes), and notMatch patterns MUST match the contents (a missing file fails).",
           "additionalProperties": {
             "$ref": "#/definitions/fileCheck"
           }
+        },
+        "json_output": {
+          "description": "Expected JSON value of the whole stdout. Stdout must parse as a single JSON value that deep-equals this value: object keys are order-insensitive, array elements are order-sensitive, numbers compare by value (2 == 2.0). Any JSON value is allowed here, including null (which asserts stdout is exactly the JSON null)."
         }
-      },
-      "additionalProperties": false
+      }
     },
     "outputCheck": {
-      "description": "Output validation - either a list of patterns or line-specific checks",
+      "description": "Output validation - either an array of literal substrings or a map of line-specific regex checks",
       "oneOf": [
         {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "description": "List of regex patterns to match anywhere in output"
+          "description": "Literal substrings matched anywhere in the whole output. NOT regexes - metacharacters have no special meaning."
         },
         {
           "type": "object",
+          "description": "Map of 0-indexed line numbers to Go/RE2 regexes. Each regex is searched UNANCHORED within its line - use ^...$ to pin the whole line. Positive checks fail when the addressed line does not exist; negated checks pass.",
+          "propertyNames": {
+            "pattern": "^[0-9]+$"
+          },
           "additionalProperties": {
             "type": "string"
-          },
-          "description": "Map of line numbers (0-indexed) to regex patterns"
+          }
         }
       ]
     },
     "fileCheck": {
       "type": "object",
       "description": "Validation for an output file",
+      "additionalProperties": false,
       "properties": {
         "exists": {
           "type": "boolean",
@@ -139,17 +165,16 @@
           "items": {
             "type": "string"
           },
-          "description": "Regex patterns that must match in the file"
+          "description": "Go/RE2 regex patterns that must match the file's contents (under !files: must NOT match; a missing file passes there)"
         },
         "notMatch": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "description": "Regex patterns that must NOT match in the file"
+          "description": "Go/RE2 regex patterns that must NOT match the file's contents (a missing file passes; under !files: MUST match, and a missing file fails)"
         }
-      },
-      "additionalProperties": false
+      }
     }
   }
 }
