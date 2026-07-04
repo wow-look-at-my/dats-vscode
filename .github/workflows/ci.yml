@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Provides the pnpm version pinned by package.json's packageManager field
+      - run: corepack enable
+
+      - run: pnpm install --frozen-lockfile
+
+      # Mirrors the justfile recipes (test, _compile, build) as direct commands
+      - run: pnpm vitest run --coverage
+
+      - run: pnpm tsc --noEmit
+
+      - run: pnpm esbuild src/extension.ts --bundle --minify --outfile=dist/extension.js --external:vscode --format=cjs --platform=node
+
+      - run: pnpm esbuild src/extension.ts --bundle --minify --outfile=dist/web/extension.js --external:vscode --format=cjs --platform=browser
+
+      - run: mkdir -p build && pnpm vsce package --no-dependencies --out build/dats.vsix
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dats.vsix
+          path: build/dats.vsix
