@@ -60,9 +60,10 @@ export function extractBlockLines(lines: string[], blockName: string): string[] 
     const result: string[] = [];
     let inBlock = false;
     let blockIndent = -1;
+    const blockPattern = new RegExp(`^(\\s*)${blockName}:\\s*(#.*)?$`);
 
     for (const line of lines) {
-        const blockMatch = line.match(new RegExp(`^(\\s*)${blockName}:\\s*(#.*)?$`));
+        const blockMatch = line.match(blockPattern);
         if (!inBlock && blockMatch) {
             inBlock = true;
             blockIndent = blockMatch[1].length;
@@ -89,10 +90,11 @@ export function extractBlockKeys(lines: string[], blockName: string): string[] {
     let inBlock = false;
     let blockIndent = -1;
     let keyIndent = -1; // The expected indentation for keys
+    const blockPattern = new RegExp(`^(\\s*)${blockName}:\\s*(#.*)?$`);
 
     for (const line of lines) {
         // Check if this line starts the block we're looking for
-        const blockMatch = line.match(new RegExp(`^(\\s*)${blockName}:\\s*(#.*)?$`));
+        const blockMatch = line.match(blockPattern);
         if (blockMatch) {
             inBlock = true;
             blockIndent = blockMatch[1].length;

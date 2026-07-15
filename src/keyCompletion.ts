@@ -5,7 +5,6 @@ interface KeyDef {
     key: string;
     description: string;
     insertText?: string;
-    isSnippet?: boolean;
 }
 
 // Multi-line insertTexts use indentation RELATIVE to the current line (two
@@ -20,8 +19,7 @@ const ROOT_SNIPPETS: KeyDef[] = [
     {
         key: 'dats',
         description: 'Create a new DATS test file',
-        insertText: 'tests:\n  - desc: ${1:test description}\n    exit: ${2:0}\n    cmd: ${3:echo hello}\n    outputs:\n      stdout:\n        - "${4:expected output}"',
-        isSnippet: true
+        insertText: 'tests:\n  - desc: ${1:test description}\n    exit: ${2:0}\n    cmd: ${3:echo hello}\n    outputs:\n      stdout:\n        - "${4:expected output}"'
     }
 ];
 
@@ -43,20 +41,17 @@ const TESTS_ARRAY_SNIPPETS: KeyDef[] = [
     {
         key: 'test',
         description: 'Add a new test case',
-        insertText: '- desc: ${1:test description}\n  exit: ${2:0}\n  cmd: ${3:command}\n  outputs:\n    stdout:\n      - "${4:expected}"',
-        isSnippet: true
+        insertText: '- desc: ${1:test description}\n  exit: ${2:0}\n  cmd: ${3:command}\n  outputs:\n    stdout:\n      - "${4:expected}"'
     },
     {
         key: 'test-input',
         description: 'Add a test with input file',
-        insertText: '- desc: ${1:test description}\n  exit: ${2:0}\n  inputs:\n    files:\n      ${3:input.txt}: |\n        ${4:file content}\n  cmd: ${5:cat} {inputs.$3}\n  outputs:\n    stdout:\n      - "${6:expected}"',
-        isSnippet: true
+        insertText: '- desc: ${1:test description}\n  exit: ${2:0}\n  inputs:\n    files:\n      ${3:input.txt}: |\n        ${4:file content}\n  cmd: ${5:cat} {inputs.$3}\n  outputs:\n    stdout:\n      - "${6:expected}"'
     },
     {
         key: 'test-stdin',
         description: 'Add a test with stdin',
-        insertText: '- desc: ${1:test description}\n  exit: ${2:0}\n  inputs:\n    stdin: "${3:input data}"\n  cmd: ${4:cat}\n  outputs:\n    stdout:\n      - "${5:expected}"',
-        isSnippet: true
+        insertText: '- desc: ${1:test description}\n  exit: ${2:0}\n  inputs:\n    stdin: "${3:input data}"\n  cmd: ${4:cat}\n  outputs:\n    stdout:\n      - "${5:expected}"'
     }
 ];
 

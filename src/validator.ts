@@ -10,6 +10,10 @@ const GO_DURATION_PATTERN = /^\+?(0|((\d+(\.\d*)?|\.\d+)(ns|us|µs|μs|ms|s|m|h)
 
 const UNKNOWN_KEY_SUFFIX = ' (dats will refuse to run this file)';
 
+function isNullScalar(node: unknown): boolean {
+    return node instanceof Scalar && node.value === null;
+}
+
 export function validateDatsDocument(document: vscode.TextDocument): vscode.Diagnostic[] {
     const diagnostics: vscode.Diagnostic[] = [];
     const text = document.getText();
@@ -29,7 +33,7 @@ export function validateDatsDocument(document: vscode.TextDocument): vscode.Diag
 
     const root = doc.contents;
     if (!isMap(root)) {
-        if (root && !(root instanceof Scalar && root.value === null)) {
+        if (root && !isNullScalar(root)) {
             const range = nodeRange(root, lineCounter, document);
             diagnostics.push(new vscode.Diagnostic(range, 'Document root must be a mapping', vscode.DiagnosticSeverity.Error));
         } else if (diagnostics.length === 0) {
@@ -50,7 +54,7 @@ export function validateDatsDocument(document: vscode.TextDocument): vscode.Diag
 
     // Validate tests array
     const testsNode = root.get('tests', true);
-    if (!testsNode || (testsNode instanceof Scalar && testsNode.value === null)) {
+    if (!testsNode || isNullScalar(testsNode)) {
         const range = testsNode ? nodeRange(testsNode, lineCounter, document) : new vscode.Range(0, 0, 0, 1);
         diagnostics.push(new vscode.Diagnostic(range, 'no tests defined', vscode.DiagnosticSeverity.Error));
         return diagnostics;
