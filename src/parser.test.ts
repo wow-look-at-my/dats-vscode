@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     findTestRange,
+    extractBlockLines,
     extractBlockKeys,
     findInputs,
     findOutputs,
@@ -12,7 +13,7 @@ describe('findTestRange', () => {
     it('finds test range for single test', () => {
         const lines = [
             'tests:',
-            '  - name: test one',
+            '  - desc: test one',
             '    exit: 0',
             '    cmd: echo hello',
         ];
@@ -22,104 +23,198 @@ describe('findTestRange', () => {
     it('finds test range with multiple tests', () => {
         const lines = [
             'tests:',
-            '  - name: test one',
+            '  - desc: test one',
             '    exit: 0',
-            '  - name: test two',
+            '  - desc: test two',
             '    exit: 1',
         ];
         expect(findTestRange(lines, 2)).toEqual([1, 3]);
         expect(findTestRange(lines, 4)).toEqual([3, 5]);
     });
 
+    it('treats a test starting with any key as a boundary', () => {
+        const lines = [
+            'tests:',
+            '  - cmd: echo one',
+            '  - inputs:',
+            '      stdin: "hi"',
+            '    cmd: cat',
+        ];
+        expect(findTestRange(lines, 1)).toEqual([1, 2]);
+        expect(findTestRange(lines, 3)).toEqual([2, 5]);
+    });
+
+    it('does not treat nested sequence items as test boundaries', () => {
+        const lines = [
+            'tests:',
+            '  - cmd: echo hello',
+            '    outputs:',
+            '      stdout:',
+            '        - "hello"',
+            '        - "world"',
+            '  - cmd: echo two',
+        ];
+        expect(findTestRange(lines, 4)).toEqual([1, 6]);
+        expect(findTestRange(lines, 6)).toEqual([6, 7]);
+    });
+
+    it('supports test items at the same indent as the tests key', () => {
+        const lines = [
+            'tests:',
+            '- cmd: echo one',
+            '- cmd: echo two',
+        ];
+        expect(findTestRange(lines, 1)).toEqual([1, 2]);
+        expect(findTestRange(lines, 2)).toEqual([2, 3]);
+    });
+
     it('returns undefined when not in a test', () => {
-        const lines = ['tests:', '  # comment'];
-        expect(findTestRange(lines, 0)).toBeUndefined();
+        expect(findTestRange(['tests:', '  # comment'], 0)).toBeUndefined();
+        expect(findTestRange(['tests:', '  - cmd: echo'], 0)).toBeUndefined();
+        expect(findTestRange(['# just a comment'], 0)).toBeUndefined();
+    });
+});
+
+describe('extractBlockLines', () => {
+    it('returns the lines nested inside the named block', () => {
+        const lines = [
+            '    inputs:',
+            '      stdin: "hi"',
+            '      files:',
+            '        data.txt: content',
+            '    cmd: echo',
+        ];
+        expect(extractBlockLines(lines, 'inputs')).toEqual([
+            '      stdin: "hi"',
+            '      files:',
+            '        data.txt: content',
+        ]);
+    });
+
+    it('returns empty array when block not found', () => {
+        expect(extractBlockLines(['    cmd: echo'], 'inputs')).toEqual([]);
     });
 });
 
 describe('extractBlockKeys', () => {
-    it('extracts keys from inputs block', () => {
+    it('extracts immediate child keys of a block', () => {
         const lines = [
-            '  - name: test',
             '    inputs:',
-            '      file1.txt: content',
-            '      file2.txt: content',
+            '      stdin: "hi"',
+            '      files:',
+            '        data.txt: content',
             '    cmd: echo',
         ];
-        expect(extractBlockKeys(lines, 'inputs')).toEqual(['file1.txt', 'file2.txt']);
+        expect(extractBlockKeys(lines, 'inputs')).toEqual(['stdin', 'files']);
     });
 
     it('extracts keys from outputs block', () => {
         const lines = [
-            '  - name: test',
+            '  - desc: test',
             '    outputs:',
             '      stdout:',
             '        - "hello"',
-            '      binary:',
-            '        exists: true',
+            '      files:',
+            '        binary:',
+            '          exists: true',
         ];
-        expect(extractBlockKeys(lines, 'outputs')).toEqual(['stdout', 'binary']);
+        expect(extractBlockKeys(lines, 'outputs')).toEqual(['stdout', 'files']);
     });
 
     it('returns empty array when block not found', () => {
-        const lines = ['  - name: test', '    cmd: echo'];
+        const lines = ['  - desc: test', '    cmd: echo'];
         expect(extractBlockKeys(lines, 'inputs')).toEqual([]);
     });
 
     it('stops at end of block', () => {
         const lines = [
             '    inputs:',
-            '      file.txt: content',
+            '      files:',
             '    outputs:',
             '      stdout:',
         ];
-        expect(extractBlockKeys(lines, 'inputs')).toEqual(['file.txt']);
+        expect(extractBlockKeys(lines, 'inputs')).toEqual(['files']);
     });
 });
 
 describe('findInputs', () => {
-    it('finds input file names', () => {
+    it('finds file names declared under inputs.files', () => {
         const lines = [
-            '  - name: test',
+            '  - desc: test',
             '    inputs:',
-            '      data.txt: |',
-            '        hello',
-            '      config.json: "{}"',
+            '      stdin: "some input"',
+            '      files:',
+            '        data.txt: |',
+            '          hello',
+            '        config.json: "{}"',
+            '    cmd: cat {inputs.data.txt}',
         ];
         expect(findInputs(lines)).toEqual(['data.txt', 'config.json']);
+    });
+
+    it('returns empty array when inputs has no files block', () => {
+        const lines = [
+            '  - cmd: cat',
+            '    inputs:',
+            '      stdin: "hi"',
+        ];
+        expect(findInputs(lines)).toEqual([]);
+    });
+
+    it('does not pick up output files', () => {
+        const lines = [
+            '  - cmd: touch {outputs.out.txt}',
+            '    outputs:',
+            '      files:',
+            '        out.txt:',
+            '          exists: true',
+        ];
+        expect(findInputs(lines)).toEqual([]);
     });
 });
 
 describe('findOutputs', () => {
-    it('finds output file names excluding reserved keys', () => {
+    it('finds file names declared under outputs.files', () => {
         const lines = [
-            '  - name: test',
+            '  - desc: test',
             '    outputs:',
             '      stdout:',
             '        - "hello"',
             '      stderr:',
-            '        - "error"',
-            '      binary:',
-            '        exists: true',
-            '      result.txt:',
-            '        contains:',
-            '          - "success"',
+            '        - "warning"',
+            '      files:',
+            '        result.txt:',
+            '          exists: true',
+            '        binary:',
+            '          match:',
+            '            - "ok"',
         ];
-        expect(findOutputs(lines)).toEqual(['binary', 'result.txt']);
+        expect(findOutputs(lines)).toEqual(['result.txt', 'binary']);
     });
 
-    it('excludes !stdout and !stderr', () => {
+    it('does not include names under "!files" or reserved output keys', () => {
         const lines = [
             '    outputs:',
             '      "!stdout":',
             '        - "bad"',
-            '      "!stderr":',
-            '        - "error"',
-            '      output.bin:',
-            '        exists: true',
+            '      files:',
+            '        output.bin:',
+            '          exists: true',
+            '      "!files":',
+            '        unexpected.txt:',
+            '          exists: true',
         ];
-        // Note: the parser extracts !stdout and !stderr as keys, then filters
         expect(findOutputs(lines)).toEqual(['output.bin']);
+    });
+
+    it('does not pick up input files', () => {
+        const lines = [
+            '  - cmd: cat {inputs.in.txt}',
+            '    inputs:',
+            '      files:',
+            '        in.txt: content',
+        ];
+        expect(findOutputs(lines)).toEqual([]);
     });
 });
 
