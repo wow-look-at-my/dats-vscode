@@ -1,9 +1,11 @@
 # DATS VS Code Extension
 
+export BUILD_DIR := justfile_directory() / "build"
+
 # Build extension and package as .vsix
 build: _compile
     mkdir -p "$BUILD_DIR"
-    pnpm vsce package --no-dependencies --out "$BUILD_DIR/dats.vsix"
+    pnpm run package
 
 # Install extension in VS Code
 install: build
@@ -15,11 +17,14 @@ update: && _deps
 
 # Run tests
 test:
-    pnpm vitest run --coverage
+    pnpm run test
 
-_compile: _deps && test
-    pnpm esbuild src/extension.ts --bundle --minify --outfile=dist/extension.js --external:vscode --format=cjs --platform=node
-    pnpm esbuild src/extension.ts --bundle --minify --outfile=dist/web/extension.js --external:vscode --format=cjs --platform=browser
+# Typecheck without emitting
+typecheck:
+    pnpm run typecheck
+
+_compile: _deps && test typecheck
+    pnpm run build
 
 _deps:
     pnpm install
