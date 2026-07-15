@@ -1,29 +1,22 @@
 import * as vscode from 'vscode';
-import { parseDocument, YAMLParseError, isMap, isSeq, Scalar, YAMLMap, YAMLSeq, LineCounter } from 'yaml';
+import { parseDocument, isMap, isSeq, Scalar, YAMLMap, LineCounter } from 'yaml';
 
-const EXIT_VAR_PATTERN = /^EXIT_[A-Z_]+$/;
+// The dats runner resolves only these two exit code names; any other EXIT_*
+// string is rejected at parse time.
+const EXIT_VAR_PATTERN = /^EXIT_(SUCCESS|FAILURE)$/;
 // Go time.ParseDuration syntax (dats rejects negative timeouts, so no leading minus):
 // optional +, then "0" or one or more <decimal number><unit> groups.
 const GO_DURATION_PATTERN = /^\+?(0|((\d+(\.\d*)?|\.\d+)(ns|us|µs|μs|ms|s|m|h))+)$/;
+
+const UNKNOWN_KEY_SUFFIX = ' (dats will refuse to run this file)';
 
 export function validateDatsDocument(document: vscode.TextDocument): vscode.Diagnostic[] {
     const diagnostics: vscode.Diagnostic[] = [];
     const text = document.getText();
     const lineCounter = new LineCounter();
 
-    let doc;
-    try {
-        doc = parseDocument(text, { lineCounter });
-    } catch (e) {
-        if (e instanceof YAMLParseError) {
-            const pos = e.linePos?.[0];
-            if (pos) {
-                const range = new vscode.Range(pos.line - 1, pos.col - 1, pos.line - 1, pos.col);
-                diagnostics.push(new vscode.Diagnostic(range, e.message, vscode.DiagnosticSeverity.Error));
-            }
-        }
-        return diagnostics;
-    }
+    // parseDocument does not throw on malformed input; it reports via doc.errors
+    const doc = parseDocument(text, { lineCounter });
 
     // Check for YAML parse errors
     for (const error of doc.errors) {
@@ -36,9 +29,12 @@ export function validateDatsDocument(document: vscode.TextDocument): vscode.Diag
 
     const root = doc.contents;
     if (!isMap(root)) {
-        if (root) {
+        if (root && !(root instanceof Scalar && root.value === null)) {
             const range = nodeRange(root, lineCounter, document);
             diagnostics.push(new vscode.Diagnostic(range, 'Document root must be a mapping', vscode.DiagnosticSeverity.Error));
+        } else if (diagnostics.length === 0) {
+            // Empty document: same hard error the CLI reports
+            diagnostics.push(new vscode.Diagnostic(new vscode.Range(0, 0, 0, 1), 'no tests defined', vscode.DiagnosticSeverity.Error));
         }
         return diagnostics;
     }
@@ -48,19 +44,27 @@ export function validateDatsDocument(document: vscode.TextDocument): vscode.Diag
         const key = item.key;
         if (key instanceof Scalar && key.value !== 'tests') {
             const range = nodeRange(key, lineCounter, document);
-            diagnostics.push(new vscode.Diagnostic(range, `Unknown property "${key.value}"`, vscode.DiagnosticSeverity.Warning));
+            diagnostics.push(new vscode.Diagnostic(range, `Unknown property "${key.value}"${UNKNOWN_KEY_SUFFIX}`, vscode.DiagnosticSeverity.Error));
         }
     }
 
     // Validate tests array
     const testsNode = root.get('tests', true);
-    if (!testsNode) {
+    if (!testsNode || (testsNode instanceof Scalar && testsNode.value === null)) {
+        const range = testsNode ? nodeRange(testsNode, lineCounter, document) : new vscode.Range(0, 0, 0, 1);
+        diagnostics.push(new vscode.Diagnostic(range, 'no tests defined', vscode.DiagnosticSeverity.Error));
         return diagnostics;
     }
 
     if (!isSeq(testsNode)) {
         const range = nodeRange(testsNode, lineCounter, document);
         diagnostics.push(new vscode.Diagnostic(range, '"tests" must be an array', vscode.DiagnosticSeverity.Error));
+        return diagnostics;
+    }
+
+    if (testsNode.items.length === 0) {
+        const range = nodeRange(testsNode, lineCounter, document);
+        diagnostics.push(new vscode.Diagnostic(range, 'no tests defined', vscode.DiagnosticSeverity.Error));
         return diagnostics;
     }
 
@@ -86,15 +90,18 @@ function validateTest(test: YAMLMap, lineCounter: LineCounter, document: vscode.
         const key = item.key;
         if (key instanceof Scalar && !validKeys.has(key.value as string)) {
             const range = nodeRange(key, lineCounter, document);
-            diagnostics.push(new vscode.Diagnostic(range, `Unknown property "${key.value}"`, vscode.DiagnosticSeverity.Warning));
+            diagnostics.push(new vscode.Diagnostic(range, `Unknown property "${key.value}"${UNKNOWN_KEY_SUFFIX}`, vscode.DiagnosticSeverity.Error));
         }
     }
 
-    // cmd is required
+    // cmd is required and must be non-empty (the CLI treats null/"" as missing)
     const cmdNode = test.get('cmd', true);
     if (!cmdNode) {
         const range = nodeRange(test, lineCounter, document);
         diagnostics.push(new vscode.Diagnostic(range, 'Test is missing required property "cmd"', vscode.DiagnosticSeverity.Error));
+    } else if (cmdNode instanceof Scalar && (cmdNode.value === null || cmdNode.value === '')) {
+        const range = nodeRange(cmdNode, lineCounter, document);
+        diagnostics.push(new vscode.Diagnostic(range, '"cmd" must be a non-empty string', vscode.DiagnosticSeverity.Error));
     }
 
     // Validate exit code
@@ -134,7 +141,8 @@ function validateExitCode(node: any, lineCounter: LineCounter, document: vscode.
         }
     } else if (typeof value === 'string') {
         if (!EXIT_VAR_PATTERN.test(value)) {
-            diagnostics.push(new vscode.Diagnostic(range, `Exit code "${value}" must be an integer (0-255) or EXIT_* variable name`, vscode.DiagnosticSeverity.Error));
+            // Mirrors the CLI's parse error
+            diagnostics.push(new vscode.Diagnostic(range, `exit "${value}" is not a recognized exit code name (use EXIT_SUCCESS, EXIT_FAILURE, or an integer 0-255)`, vscode.DiagnosticSeverity.Error));
         }
     }
 }
@@ -163,13 +171,14 @@ function validateInputs(inputs: YAMLMap, lineCounter: LineCounter, document: vsc
         const key = item.key;
         if (key instanceof Scalar && !validKeys.has(key.value as string)) {
             const range = nodeRange(key, lineCounter, document);
-            diagnostics.push(new vscode.Diagnostic(range, `Unknown inputs property "${key.value}"`, vscode.DiagnosticSeverity.Warning));
+            diagnostics.push(new vscode.Diagnostic(range, `Unknown inputs property "${key.value}"${UNKNOWN_KEY_SUFFIX}`, vscode.DiagnosticSeverity.Error));
         }
     }
 }
 
 function validateOutputs(outputs: YAMLMap, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
     const validKeys = new Set(['stdout', 'stderr', '!stdout', '!stderr', 'files', '!files', 'json_output']);
+    const outputCheckKeys = new Set(['stdout', 'stderr', '!stdout', '!stderr']);
 
     for (const item of outputs.items) {
         const key = item.key;
@@ -178,7 +187,12 @@ function validateOutputs(outputs: YAMLMap, lineCounter: LineCounter, document: v
         const keyStr = key.value as string;
         if (!validKeys.has(keyStr)) {
             const range = nodeRange(key, lineCounter, document);
-            diagnostics.push(new vscode.Diagnostic(range, `Unknown outputs property "${keyStr}"`, vscode.DiagnosticSeverity.Warning));
+            diagnostics.push(new vscode.Diagnostic(range, `Unknown outputs property "${keyStr}"${UNKNOWN_KEY_SUFFIX}`, vscode.DiagnosticSeverity.Error));
+        }
+
+        // Validate stdout/stderr/!stdout/!stderr shape
+        if (outputCheckKeys.has(keyStr) && item.value) {
+            validateOutputCheck(item.value, lineCounter, document, diagnostics);
         }
 
         // Validate files and !files maps
@@ -193,6 +207,55 @@ function validateOutputs(outputs: YAMLMap, lineCounter: LineCounter, document: v
     }
 }
 
+function validateOutputCheck(node: any, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
+    if (isSeq(node)) {
+        // List form: literal substring patterns
+        for (const el of node.items) {
+            if (!(el instanceof Scalar) || typeof el.value !== 'string') {
+                const range = nodeRange(el, lineCounter, document);
+                diagnostics.push(new vscode.Diagnostic(range, 'Output check patterns must be strings', vscode.DiagnosticSeverity.Error));
+            }
+        }
+        return;
+    }
+
+    if (isMap(node)) {
+        // Map form: 0-indexed line number to regex
+        for (const pair of node.items) {
+            const key = pair.key;
+            if (key instanceof Scalar) {
+                const kv = key.value;
+                const isInteger =
+                    (typeof kv === 'number' && Number.isInteger(kv)) ||
+                    (typeof kv === 'string' && /^-?[0-9]+$/.test(kv));
+                if (!isInteger) {
+                    const range = nodeRange(key, lineCounter, document);
+                    // Mirrors the CLI's parse error
+                    diagnostics.push(new vscode.Diagnostic(range, `line check key must be an integer, got "${kv}"`, vscode.DiagnosticSeverity.Error));
+                } else if (Number(kv) < 0) {
+                    const range = nodeRange(key, lineCounter, document);
+                    diagnostics.push(new vscode.Diagnostic(range, 'Line check keys are 0-indexed line numbers and must not be negative', vscode.DiagnosticSeverity.Error));
+                }
+            }
+            const value = pair.value;
+            if (value && (!(value instanceof Scalar) || typeof value.value !== 'string')) {
+                const range = nodeRange(value, lineCounter, document);
+                diagnostics.push(new vscode.Diagnostic(range, 'Line check values must be regex strings', vscode.DiagnosticSeverity.Error));
+            }
+        }
+        return;
+    }
+
+    if (node instanceof Scalar) {
+        // `stdout:` with no value is accepted by the CLI (no checks); anything
+        // else scalar is a hard parse error there.
+        if (node.value === null) return;
+        const range = nodeRange(node, lineCounter, document);
+        // Mirrors the CLI's parse error
+        diagnostics.push(new vscode.Diagnostic(range, 'output check must be a list of patterns or map of line checks', vscode.DiagnosticSeverity.Error));
+    }
+}
+
 function validateFileCheck(fileCheck: YAMLMap, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
     const validKeys = new Set(['exists', 'match', 'notMatch']);
 
@@ -200,7 +263,7 @@ function validateFileCheck(fileCheck: YAMLMap, lineCounter: LineCounter, documen
         const key = item.key;
         if (key instanceof Scalar && !validKeys.has(key.value as string)) {
             const range = nodeRange(key, lineCounter, document);
-            diagnostics.push(new vscode.Diagnostic(range, `Unknown file check property "${key.value}"`, vscode.DiagnosticSeverity.Warning));
+            diagnostics.push(new vscode.Diagnostic(range, `Unknown file check property "${key.value}"${UNKNOWN_KEY_SUFFIX}`, vscode.DiagnosticSeverity.Error));
         }
     }
 }
