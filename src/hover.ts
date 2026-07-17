@@ -10,8 +10,12 @@ const FIELD_DOCS: Record<string, { summary: string; detail?: string }> = {
         detail: 'Human-readable name for the test. If omitted, the command is used as the test name.'
     },
     exit: {
-        summary: 'Expected exit code',
-        detail: 'Integer (0-255) or EXIT_* variable name (e.g., EXIT_SUCCESS, EXIT_FAILURE).'
+        summary: 'Expected exit code (0-255, bare or quoted) or exit code name (default 0)',
+        detail: 'Integer 0-255 (bare or quoted, e.g. "3") or exit code name EXIT_SUCCESS / EXIT_FAILURE. Floats are parse errors.'
+    },
+    timeout: {
+        summary: 'Per-test timeout (optional)',
+        detail: 'Integer number of seconds (bare or quoted, e.g. "5"), or a Go duration string (e.g. "500ms", "2s", "1m30s"). 0 or omitted means no timeout. Floats are parse errors -- write "1.5s", not 1.5.'
     },
     cmd: {
         summary: 'Command to execute',
@@ -27,7 +31,11 @@ const FIELD_DOCS: Record<string, { summary: string; detail?: string }> = {
     },
     files: {
         summary: 'Files map',
-        detail: 'Under inputs: Map of filename to content. Under outputs: Map of filename to file checks.'
+        detail: 'Under inputs: Map of filename to content. Under outputs: Map of filename to file checks; an empty check ({} or nothing) asserts the file must exist. File names must be relative paths that stay inside the test directory (nested names like sub/file.txt are allowed).'
+    },
+    env: {
+        summary: 'Per-test environment variables',
+        detail: 'Map of environment variable name to value, ADDED to the inherited environment (in sorted key order). Values go through the same {inputs.X}/{outputs.X} placeholder expansion as cmd.'
     },
     outputs: {
         summary: 'Output validations',
@@ -35,23 +43,27 @@ const FIELD_DOCS: Record<string, { summary: string; detail?: string }> = {
     },
     stdout: {
         summary: 'Standard output assertions',
-        detail: 'Array of regex patterns to match in stdout, or map of line numbers to patterns.'
+        detail: 'List form: literal substrings that must each appear in stdout (not regexes). Map form: 0-indexed line number to regex matched against that line.'
     },
     stderr: {
         summary: 'Standard error assertions',
-        detail: 'Array of regex patterns to match in stderr, or map of line numbers to patterns.'
+        detail: 'List form: literal substrings that must each appear in stderr (not regexes). Map form: 0-indexed line number to regex matched against that line.'
     },
     '!stdout': {
         summary: 'Negative stdout assertions',
-        detail: 'Regex patterns that must NOT appear in stdout.'
+        detail: 'List form: literal substrings that must NOT appear in stdout (not regexes). Map form: 0-indexed line number to regex that must NOT match that line.'
     },
     '!stderr': {
         summary: 'Negative stderr assertions',
-        detail: 'Regex patterns that must NOT appear in stderr.'
+        detail: 'List form: literal substrings that must NOT appear in stderr (not regexes). Map form: 0-indexed line number to regex that must NOT match that line.'
     },
     '!files': {
         summary: 'Negative file assertions',
-        detail: 'Map of filenames to checks that should fail or not exist.'
+        detail: 'Map of filename to checks, each inverted: exists: true means the file must NOT exist, match patterns must NOT match the contents, and notMatch patterns MUST match. An empty check ({} or nothing) asserts the file must NOT exist.'
+    },
+    json_output: {
+        summary: 'Expected JSON value of the whole stdout',
+        detail: 'Stdout must parse as a single JSON value that deep-equals this value: object keys are order-insensitive, array elements are order-sensitive, numbers compare by value. Any JSON value is allowed, including null.'
     },
     exists: {
         summary: 'File existence check',
@@ -85,7 +97,9 @@ export class DatsHoverProvider implements vscode.HoverProvider {
         const beforeWord = line.substring(0, wordRange.start.character);
 
         // Is this a key? (has colon after, and is at start of meaningful content)
-        const isKey = afterWord.match(/^\s*:/) && beforeWord.match(/^[\s-]*$/);
+        // Keys like "!stdout" must be quoted in YAML, so allow a closing quote
+        // between the word and the colon, and an opening quote before the word.
+        const isKey = afterWord.match(/^"?\s*:/) && beforeWord.match(/^[\s-]*"?$/);
 
         if (!isKey) return undefined;
 

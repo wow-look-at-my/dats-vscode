@@ -35,7 +35,7 @@
           "description": "Command to execute (via bash -c). {inputs.X} expands to the absolute path of the declared input file X; {outputs.X} expands to an absolute path in the test's private outputs directory (no outputs.files check required). The same expansion is applied to inputs.files contents."
         },
         "exit": {
-          "description": "Expected exit code (0-255) or exit code name (default 0)",
+          "description": "Expected exit code (0-255, bare or quoted) or exit code name (default 0)",
           "default": 0,
           "oneOf": [
             {
@@ -47,18 +47,25 @@
               "type": "string",
               "enum": ["EXIT_SUCCESS", "EXIT_FAILURE"],
               "$comment": "Only the names the runner resolves (EXIT_SUCCESS=0, EXIT_FAILURE=1); any other EXIT_* name is rejected at parse time because it could never pass a run."
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{1,3}$",
+              "description": "A quoted integer exit code (e.g. \"3\"), accepted as its numeric value; the 0-255 range is enforced at parse time"
             }
           ]
         },
         "timeout": {
-          "description": "Optional per-test timeout: an integer number of seconds, or a Go duration string (e.g. \"500ms\", \"2s\", \"1m30s\"). 0 or omitted means no timeout.",
+          "description": "Optional per-test timeout: an integer number of seconds, or a Go duration string (e.g. \"500ms\", \"2s\", \"1m30s\"). A bare integer (quoted or not) means seconds. 0 or omitted means no timeout.",
           "oneOf": [
             {
               "type": "integer",
               "minimum": 0
             },
             {
-              "type": "string"
+              "type": "string",
+              "pattern": "^[0-9]+$|^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|\u03bcs|ms|s|m|h))+$",
+              "description": "A Go duration string (e.g. \"500ms\", \"2s\", \"1m30s\"), or a quoted bare integer meaning seconds"
             }
           ]
         },
@@ -81,10 +88,18 @@
         },
         "files": {
           "type": "object",
-          "description": "Fixture files to create before running, mapping filename to content. Contents go through the same {inputs.X}/{outputs.X} placeholder expansion as cmd.",
+          "description": "Fixture files to create before running, mapping filename to content. Contents go through the same {inputs.X}/{outputs.X} placeholder expansion as cmd. File names must be relative paths that stay inside the test directory (no \"..\" or absolute paths; rejected at parse time); nested paths like \"sub/file.txt\" are allowed.",
           "additionalProperties": {
             "type": "string",
             "description": "File content ({inputs.X}/{outputs.X} placeholders are expanded)"
+          }
+        },
+        "env": {
+          "type": "object",
+          "description": "Environment variables for the command, mapping name to value. The variables are ADDED to the inherited environment (appended in sorted key order; they do not replace it). Values go through the same {inputs.X}/{outputs.X} placeholder expansion as cmd.",
+          "additionalProperties": {
+            "type": "string",
+            "description": "Variable value ({inputs.X}/{outputs.X} placeholders are expanded)"
           }
         }
       }
@@ -112,14 +127,14 @@
         },
         "files": {
           "type": "object",
-          "description": "Output file validations, mapping filename to checks",
+          "description": "Output file validations, mapping filename to checks. File names must be relative paths that stay inside the test directory (no \"..\" or absolute paths; rejected at parse time); nested paths like \"sub/file.txt\" are allowed.",
           "additionalProperties": {
             "$ref": "#/definitions/fileCheck"
           }
         },
         "!files": {
           "type": "object",
-          "description": "Negated output file validations, mapping filename to checks. Each check is inverted: exists is flipped (exists: true means the file must NOT exist), match patterns must NOT match the contents (a missing file passes), and notMatch patterns MUST match the contents (a missing file fails).",
+          "description": "Negated output file validations, mapping filename to checks. Each check is inverted: exists is flipped (exists: true means the file must NOT exist), match patterns must NOT match the contents (a missing file passes), and notMatch patterns MUST match the contents (a missing file fails). File names must be relative paths that stay inside the test directory (no \"..\" or absolute paths; rejected at parse time); nested paths like \"sub/file.txt\" are allowed.",
           "additionalProperties": {
             "$ref": "#/definitions/fileCheck"
           }
@@ -152,8 +167,8 @@
       ]
     },
     "fileCheck": {
-      "type": "object",
-      "description": "Validation for an output file",
+      "type": ["object", "null"],
+      "description": "Validation for an output file. An empty check ({} or null) is an implicit existence assertion: under files the file must exist, under !files it must NOT exist.",
       "additionalProperties": false,
       "properties": {
         "exists": {
