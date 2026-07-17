@@ -10,12 +10,12 @@ const FIELD_DOCS: Record<string, { summary: string; detail?: string }> = {
         detail: 'Human-readable name for the test. If omitted, the command is used as the test name.'
     },
     exit: {
-        summary: 'Expected exit code',
-        detail: 'Integer (0-255) or exit code name EXIT_SUCCESS / EXIT_FAILURE (default 0).'
+        summary: 'Expected exit code (0-255, bare or quoted) or exit code name (default 0)',
+        detail: 'Integer 0-255 (bare or quoted, e.g. "3") or exit code name EXIT_SUCCESS / EXIT_FAILURE. Floats are parse errors.'
     },
     timeout: {
         summary: 'Per-test timeout (optional)',
-        detail: 'Integer number of seconds, or a Go duration string (e.g. "500ms", "2s", "1m30s"). 0 or omitted means no timeout.'
+        detail: 'Integer number of seconds (bare or quoted, e.g. "5"), or a Go duration string (e.g. "500ms", "2s", "1m30s"). 0 or omitted means no timeout. Floats are parse errors -- write "1.5s", not 1.5.'
     },
     cmd: {
         summary: 'Command to execute',
@@ -31,7 +31,11 @@ const FIELD_DOCS: Record<string, { summary: string; detail?: string }> = {
     },
     files: {
         summary: 'Files map',
-        detail: 'Under inputs: Map of filename to content. Under outputs: Map of filename to file checks.'
+        detail: 'Under inputs: Map of filename to content. Under outputs: Map of filename to file checks; an empty check ({} or nothing) asserts the file must exist. File names must be relative paths that stay inside the test directory (nested names like sub/file.txt are allowed).'
+    },
+    env: {
+        summary: 'Per-test environment variables',
+        detail: 'Map of environment variable name to value, ADDED to the inherited environment (in sorted key order). Values go through the same {inputs.X}/{outputs.X} placeholder expansion as cmd.'
     },
     outputs: {
         summary: 'Output validations',
@@ -55,7 +59,7 @@ const FIELD_DOCS: Record<string, { summary: string; detail?: string }> = {
     },
     '!files': {
         summary: 'Negative file assertions',
-        detail: 'Map of filename to checks, each inverted: exists: true means the file must NOT exist, match patterns must NOT match the contents, and notMatch patterns MUST match.'
+        detail: 'Map of filename to checks, each inverted: exists: true means the file must NOT exist, match patterns must NOT match the contents, and notMatch patterns MUST match. An empty check ({} or nothing) asserts the file must NOT exist.'
     },
     json_output: {
         summary: 'Expected JSON value of the whole stdout',

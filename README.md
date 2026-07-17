@@ -61,8 +61,9 @@ validation, and can be wired into a YAML language server manually. When the runn
 schema changes, re-copy it here; it must stay byte-identical to the runner's master copy.
 
 Current copy: synced from
-[wow-look-at-my/dats@3457628](https://github.com/wow-look-at-my/dats/commit/345762805a33755a273837c146715f3501b3c932)
-(the enforced-semantics schema, merged as [dats#17](https://github.com/wow-look-at-my/dats/pull/17)).
+[wow-look-at-my/dats@c10b3c9](https://github.com/wow-look-at-my/dats/commit/c10b3c903d37fd5bb8f96f3c5157ab75ba788aeb)
+(adds `inputs.env`, quoted exit codes/timeouts, local-relative fixture names and empty
+file checks, merged as [dats#21](https://github.com/wow-look-at-my/dats/pull/21)).
 
 ## Links
 

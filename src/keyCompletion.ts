@@ -25,16 +25,17 @@ const ROOT_SNIPPETS: KeyDef[] = [
 
 const TEST_KEYS: KeyDef[] = [
     { key: 'desc', description: 'Test description (optional)' },
-    { key: 'exit', description: 'Expected exit code (0-255, EXIT_SUCCESS or EXIT_FAILURE)' },
+    { key: 'exit', description: 'Expected exit code (0-255, bare or quoted; EXIT_SUCCESS or EXIT_FAILURE)' },
     { key: 'cmd', description: 'Command to execute' },
-    { key: 'timeout', description: 'Per-test timeout: integer seconds or Go duration string (e.g. 500ms, 2s, 1m30s); 0/omitted = no timeout' },
+    { key: 'timeout', description: 'Per-test timeout: integer seconds (bare or quoted) or Go duration string (e.g. 500ms, 2s, 1m30s); 0/omitted = no timeout; floats are parse errors' },
     { key: 'inputs', description: 'Input configuration', insertText: 'inputs:\n  ' },
     { key: 'outputs', description: 'Output validations', insertText: 'outputs:\n  ' }
 ];
 
 const INPUTS_KEYS: KeyDef[] = [
     { key: 'stdin', description: 'Standard input content' },
-    { key: 'files', description: 'Input files to create', insertText: 'files:\n  ' }
+    { key: 'files', description: 'Input files to create', insertText: 'files:\n  ' },
+    { key: 'env', description: 'Environment variables added to the inherited environment (values support {inputs.X}/{outputs.X} placeholders)', insertText: 'env:\n  ' }
 ];
 
 const TESTS_ARRAY_SNIPPETS: KeyDef[] = [

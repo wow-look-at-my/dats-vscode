@@ -46,4 +46,4 @@ CI (`.github/workflows/ci.yml`) runs the same package.json scripts in a single `
 
 - **schema.json must stay byte-identical to the dats repo's master schema.json.** It is synced here, not owned here. Never hand-edit it; re-copy from the runner repo and update the README provenance note (commit SHA) when it changes.
 - The VSIX contents are governed by the `files` whitelist in package.json - keep test fixtures, testdata/ and coverage out of it, and check `pnpm run package`'s file listing after touching packaging.
-- The dats CLI defines validation semantics. Extension diagnostics should match what `dats syntax` accepts and rejects; where the schema is stricter than today's CLI (float timeout/exit truncation, negative line-map keys), the extension follows the schema.
+- The dats CLI defines validation semantics. Extension diagnostics should match what `dats syntax` accepts and rejects: floats for exit/timeout are parse errors (never truncated), quoted integer exit codes/timeouts are accepted, fixture file names must be local relative paths, and duplicate or negative line-map keys are errors. If the schema and CLI ever diverge, follow the CLI and report the drift.
