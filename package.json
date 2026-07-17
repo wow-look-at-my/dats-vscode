@@ -5,6 +5,22 @@
   "description": "Language support for .dats test definition files",
   "version": "0.1.0",
   "publisher": "mhaynie",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wow-look-at-my/dats-vscode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wow-look-at-my/dats-vscode/issues"
+  },
+  "homepage": "https://github.com/wow-look-at-my/dats-vscode#readme",
+  "keywords": [
+    "dats",
+    "testing",
+    "test-runner",
+    "yaml",
+    "declarative"
+  ],
   "engines": {
     "vscode": "^1.108.0"
   },
@@ -12,6 +28,14 @@
     "Programming Languages",
     "Testing"
   ],
+  "scripts": {
+    "test": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "build:node": "esbuild src/extension.ts --bundle --minify --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "build:browser": "esbuild src/extension.ts --bundle --minify --outfile=dist/web/extension.js --external:vscode --format=cjs --platform=browser",
+    "build": "pnpm run build:node && pnpm run build:browser",
+    "package": "vsce package --no-dependencies --out build/dats.vsix"
+  },
   "main": "./dist/extension.js",
   "browser": "./dist/web/extension.js",
   "files": [
@@ -54,12 +78,15 @@
     }
   },
   "devDependencies": {
+    "@types/node": "^22.20.1",
     "@types/vscode": "^1.108.1",
     "@vitest/coverage-v8": "^4.0.17",
     "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.27.2",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.17"
+    "vitest": "^4.0.17",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
   },
   "dependencies": {
     "yaml": "^2.8.3"

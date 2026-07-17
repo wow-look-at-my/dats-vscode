@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  ci:
+  all-builds:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,16 +25,14 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Mirrors the justfile recipes (test, _compile, build) as direct commands
-      - run: pnpm vitest run --coverage
+      # The same package.json scripts the justfile recipes call
+      - run: pnpm run test
 
-      - run: pnpm tsc --noEmit
+      - run: pnpm run typecheck
 
-      - run: pnpm esbuild src/extension.ts --bundle --minify --outfile=dist/extension.js --external:vscode --format=cjs --platform=node
+      - run: pnpm run build
 
-      - run: pnpm esbuild src/extension.ts --bundle --minify --outfile=dist/web/extension.js --external:vscode --format=cjs --platform=browser
-
-      - run: mkdir -p build && pnpm vsce package --no-dependencies --out build/dats.vsix
+      - run: mkdir -p build && pnpm run package
 
       - uses: actions/upload-artifact@v4
         with:

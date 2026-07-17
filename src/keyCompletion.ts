@@ -5,9 +5,12 @@ interface KeyDef {
     key: string;
     description: string;
     insertText?: string;
-    isSnippet?: boolean;
 }
 
+// Multi-line insertTexts use indentation RELATIVE to the current line (two
+// spaces per level) and are inserted as snippets: VS Code prepends the current
+// line's indentation to each continuation line of a snippet, so they nest
+// correctly at any depth.
 const ROOT_KEYS: KeyDef[] = [
     { key: 'tests', description: 'Array of test cases', insertText: 'tests:\n  - ' }
 ];
@@ -16,58 +19,56 @@ const ROOT_SNIPPETS: KeyDef[] = [
     {
         key: 'dats',
         description: 'Create a new DATS test file',
-        insertText: 'tests:\n  - desc: ${1:test description}\n    exit: ${2:0}\n    cmd: ${3:echo hello}\n    outputs:\n      stdout:\n        - "${4:expected output}"',
-        isSnippet: true
+        insertText: 'tests:\n  - desc: ${1:test description}\n    exit: ${2:0}\n    cmd: ${3:echo hello}\n    outputs:\n      stdout:\n        - "${4:expected output}"'
     }
 ];
 
 const TEST_KEYS: KeyDef[] = [
     { key: 'desc', description: 'Test description (optional)' },
-    { key: 'exit', description: 'Expected exit code (0-255 or EXIT_*)' },
+    { key: 'exit', description: 'Expected exit code (0-255, EXIT_SUCCESS or EXIT_FAILURE)' },
     { key: 'cmd', description: 'Command to execute' },
-    { key: 'inputs', description: 'Input configuration', insertText: 'inputs:\n      ' },
-    { key: 'outputs', description: 'Output validations', insertText: 'outputs:\n      ' }
+    { key: 'timeout', description: 'Per-test timeout: integer seconds or Go duration string (e.g. 500ms, 2s, 1m30s); 0/omitted = no timeout' },
+    { key: 'inputs', description: 'Input configuration', insertText: 'inputs:\n  ' },
+    { key: 'outputs', description: 'Output validations', insertText: 'outputs:\n  ' }
 ];
 
 const INPUTS_KEYS: KeyDef[] = [
     { key: 'stdin', description: 'Standard input content' },
-    { key: 'files', description: 'Input files to create', insertText: 'files:\n        ' }
+    { key: 'files', description: 'Input files to create', insertText: 'files:\n  ' }
 ];
 
 const TESTS_ARRAY_SNIPPETS: KeyDef[] = [
     {
         key: 'test',
         description: 'Add a new test case',
-        insertText: '- desc: ${1:test description}\n  exit: ${2:0}\n  cmd: ${3:command}\n  outputs:\n    stdout:\n      - "${4:expected}"',
-        isSnippet: true
+        insertText: '- desc: ${1:test description}\n  exit: ${2:0}\n  cmd: ${3:command}\n  outputs:\n    stdout:\n      - "${4:expected}"'
     },
     {
         key: 'test-input',
         description: 'Add a test with input file',
-        insertText: '- desc: ${1:test description}\n  exit: ${2:0}\n  inputs:\n    ${3:input.txt}: |\n      ${4:file content}\n  cmd: ${5:cat} {inputs.$3}\n  outputs:\n    stdout:\n      - "${6:expected}"',
-        isSnippet: true
+        insertText: '- desc: ${1:test description}\n  exit: ${2:0}\n  inputs:\n    files:\n      ${3:input.txt}: |\n        ${4:file content}\n  cmd: ${5:cat} {inputs.$3}\n  outputs:\n    stdout:\n      - "${6:expected}"'
     },
     {
         key: 'test-stdin',
         description: 'Add a test with stdin',
-        insertText: '- desc: ${1:test description}\n  exit: ${2:0}\n  stdin: "${3:input data}"\n  cmd: ${4:cat}\n  outputs:\n    stdout:\n      - "${5:expected}"',
-        isSnippet: true
+        insertText: '- desc: ${1:test description}\n  exit: ${2:0}\n  inputs:\n    stdin: "${3:input data}"\n  cmd: ${4:cat}\n  outputs:\n    stdout:\n      - "${5:expected}"'
     }
 ];
 
 const OUTPUT_KEYS: KeyDef[] = [
-    { key: 'stdout', description: 'Regex patterns to match in stdout', insertText: 'stdout:\n        - ' },
-    { key: 'stderr', description: 'Regex patterns to match in stderr', insertText: 'stderr:\n        - ' },
-    { key: '!stdout', description: 'Regex patterns that must NOT appear in stdout', insertText: '"!stdout":\n        - ' },
-    { key: '!stderr', description: 'Regex patterns that must NOT appear in stderr', insertText: '"!stderr":\n        - ' },
-    { key: 'files', description: 'Output files to validate', insertText: 'files:\n        ' },
-    { key: '!files', description: 'Negative output file assertions', insertText: '"!files":\n        ' }
+    { key: 'stdout', description: 'Literal substrings to find in stdout (list) or 0-indexed line number to regex (map)', insertText: 'stdout:\n  - ' },
+    { key: 'stderr', description: 'Literal substrings to find in stderr (list) or 0-indexed line number to regex (map)', insertText: 'stderr:\n  - ' },
+    { key: '!stdout', description: 'Literal substrings that must NOT appear in stdout (list) or 0-indexed line number to regex (map)', insertText: '"!stdout":\n  - ' },
+    { key: '!stderr', description: 'Literal substrings that must NOT appear in stderr (list) or 0-indexed line number to regex (map)', insertText: '"!stderr":\n  - ' },
+    { key: 'files', description: 'Output files to validate', insertText: 'files:\n  ' },
+    { key: '!files', description: 'Negated output file assertions (each check inverted)', insertText: '"!files":\n  ' },
+    { key: 'json_output', description: 'Expected JSON value of the whole stdout (deep equality; object keys order-insensitive, arrays order-sensitive)' }
 ];
 
 const FILE_CHECK_KEYS: KeyDef[] = [
     { key: 'exists', description: 'File existence check (true/false)' },
-    { key: 'match', description: 'Regex patterns that must match in file', insertText: 'match:\n          - ' },
-    { key: 'notMatch', description: 'Regex patterns that must NOT match in file', insertText: 'notMatch:\n          - ' }
+    { key: 'match', description: 'Regex patterns that must match in file', insertText: 'match:\n  - ' },
+    { key: 'notMatch', description: 'Regex patterns that must NOT match in file', insertText: 'notMatch:\n  - ' }
 ];
 
 type Context = {
@@ -122,13 +123,29 @@ export class DatsKeyCompletionProvider implements vscode.CompletionItemProvider 
         // Filter out keys that already exist
         const filteredKeys = availableKeys.filter(k => !context.existingKeys.has(k.key));
 
+        // Replace whatever the user already typed of the key. The language's
+        // wordPattern excludes "!", so without an explicit range accepting
+        // "!stdout" after typing "!st" would keep the typed "!" and produce
+        // '!"!stdout":'.
+        const typedPrefix = textBeforeCursor.match(/[a-zA-Z!]*$/)?.[0] ?? '';
+        const replaceRange = new vscode.Range(
+            position.line,
+            position.character - typedPrefix.length,
+            position.line,
+            position.character
+        );
+
         const completions: vscode.CompletionItem[] = [];
 
         // Add key completions
         for (const keyDef of filteredKeys) {
             const item = new vscode.CompletionItem(keyDef.key, vscode.CompletionItemKind.Property);
             item.detail = keyDef.description;
-            item.insertText = keyDef.insertText || `${keyDef.key}: `;
+            const insertText = keyDef.insertText || `${keyDef.key}: `;
+            // Multi-line insertions rely on snippet whitespace normalization
+            // for their relative indentation
+            item.insertText = insertText.includes('\n') ? new vscode.SnippetString(insertText) : insertText;
+            item.range = replaceRange;
             item.sortText = '!' + keyDef.key; // Sort before other suggestions
             item.preselect = filteredKeys.length === 1 && availableSnippets.length === 0;
             completions.push(item);
@@ -139,6 +156,7 @@ export class DatsKeyCompletionProvider implements vscode.CompletionItemProvider 
             const item = new vscode.CompletionItem(snippetDef.key, vscode.CompletionItemKind.Snippet);
             item.detail = snippetDef.description;
             item.insertText = new vscode.SnippetString(snippetDef.insertText!);
+            item.range = replaceRange;
             item.sortText = '~' + snippetDef.key; // Sort after keys
             completions.push(item);
         }
