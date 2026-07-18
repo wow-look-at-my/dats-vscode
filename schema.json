@@ -11,6 +11,17 @@
       "type": "string",
       "description": "Optional reference to this JSON Schema"
     },
+    "setup": {
+      "$ref": "#/definitions/commandList",
+      "description": "File-level setup: command(s) run once, in order, before any of the file's tests, after shared files are written. Only {shared.X} placeholders are expanded. If a command fails, the remaining setup commands are skipped and EVERY test in the file is reported as failed (never as skipped); teardown still runs."
+    },
+    "teardown": {
+      "$ref": "#/definitions/commandList",
+      "description": "File-level teardown: command(s) that always run once, in order, after the file's tests -- after test failures and even when setup failed. One failing command does not stop the rest, but any failure marks the file failed (exit 1) even when all tests passed. Only {shared.X} placeholders are expanded."
+    },
+    "shared": {
+      "$ref": "#/definitions/shared"
+    },
     "tests": {
       "type": "array",
       "minItems": 1,
@@ -21,6 +32,40 @@
     }
   },
   "definitions": {
+    "commandList": {
+      "description": "One shell command (string) or an ordered list of shell commands (at least one). Each runs via bash -c like a test cmd, with the inherited environment, no stdin, and no timeout. Only {shared.X} placeholders are expanded; {inputs.X}/{outputs.X} are per-test namespaces and stay verbatim here. Blank commands are rejected at parse time.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      ]
+    },
+    "shared": {
+      "type": "object",
+      "description": "File-level shared fixtures, written once into the file's shared directory before setup runs. Tests address them with {shared.X} placeholders and should treat them as read-only.",
+      "required": ["files"],
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "Shared fixture files to create once per file, mapping filename to content (at least one). Contents go through {shared.X} placeholder expansion only. File names must be relative paths that stay inside the shared directory (no \"..\" or absolute paths; rejected at parse time); nested paths like \"sub/file.txt\" are allowed.",
+          "additionalProperties": {
+            "type": "string",
+            "description": "File content ({shared.X} placeholders are expanded; {inputs.X}/{outputs.X} stay verbatim)"
+          }
+        }
+      }
+    },
     "test": {
       "type": "object",
       "required": ["cmd"],
@@ -32,7 +77,7 @@
         },
         "cmd": {
           "type": "string",
-          "description": "Command to execute (via bash -c). {inputs.X} expands to the absolute path of the declared input file X; {outputs.X} expands to an absolute path in the test's private outputs directory (no outputs.files check required). The same expansion is applied to inputs.files contents."
+          "description": "Command to execute (via bash -c). {inputs.X} expands to the absolute path of the declared input file X; {outputs.X} expands to an absolute path in the test's private outputs directory (no outputs.files check required); {shared.X} expands to an absolute path in the file's shared directory (no declaration required). The same expansion is applied to inputs.files contents. When the test declares a matrix, {matrix.X} is substituted first (plain text, one instance per value combination)."
         },
         "exit": {
           "description": "Expected exit code (0-255, bare or quoted) or exit code name (default 0)",
@@ -69,6 +114,23 @@
             }
           ]
         },
+        "matrix": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "Matrix (parameterized) test: a mapping of variable name to a list of scalar values, expanding the test into one instance per combination (cartesian product). Variables keep declaration order and the LAST variable varies fastest; instances report as \"desc [k=v, k2=v2]\" and EVERY instance always runs (dats has no test filtering or selection). {matrix.X} substitutes -- in a single pass, before any runtime placeholder expansion -- into desc, cmd, inputs.stdin, inputs.files contents, inputs.env values, all output pattern strings, and every string scalar inside json_output; fixture file names, env var names, exit, timeout, and the matrix block itself stay literal. References to undeclared variables, and matrix placeholders in setup/teardown commands or shared file contents, are rejected at parse time.",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "description": "The variable's values (at least one). Each value must be a scalar -- string, number, or boolean -- substituted as its literal YAML text (1.50 stays \"1.50\", true stays \"true\"). Duplicate values (compared after stringification, so 1.50 and \"1.50\" collide) are rejected at parse time.",
+            "items": {
+              "type": ["string", "number", "boolean"]
+            }
+          }
+        },
         "inputs": {
           "$ref": "#/definitions/inputBlock"
         },
@@ -84,22 +146,22 @@
       "properties": {
         "stdin": {
           "type": "string",
-          "description": "Content piped to the command's stdin"
+          "description": "Content piped to the command's stdin. Never placeholder-expanded at runtime, but {matrix.X} IS substituted at instance-expansion time when the test declares a matrix."
         },
         "files": {
           "type": "object",
-          "description": "Fixture files to create before running, mapping filename to content. Contents go through the same {inputs.X}/{outputs.X} placeholder expansion as cmd. File names must be relative paths that stay inside the test directory (no \"..\" or absolute paths; rejected at parse time); nested paths like \"sub/file.txt\" are allowed.",
+          "description": "Fixture files to create before running, mapping filename to content. Contents go through the same {inputs.X}/{outputs.X}/{shared.X} placeholder expansion as cmd. File names must be relative paths that stay inside the test directory (no \"..\" or absolute paths; rejected at parse time); nested paths like \"sub/file.txt\" are allowed.",
           "additionalProperties": {
             "type": "string",
-            "description": "File content ({inputs.X}/{outputs.X} placeholders are expanded)"
+            "description": "File content ({inputs.X}/{outputs.X}/{shared.X} placeholders are expanded)"
           }
         },
         "env": {
           "type": "object",
-          "description": "Environment variables for the command, mapping name to value. The variables are ADDED to the inherited environment (appended in sorted key order; they do not replace it). Values go through the same {inputs.X}/{outputs.X} placeholder expansion as cmd.",
+          "description": "Environment variables for the command, mapping name to value. The variables are ADDED to the inherited environment (appended in sorted key order; they do not replace it). Values go through the same {inputs.X}/{outputs.X}/{shared.X} placeholder expansion as cmd.",
           "additionalProperties": {
             "type": "string",
-            "description": "Variable value ({inputs.X}/{outputs.X} placeholders are expanded)"
+            "description": "Variable value ({inputs.X}/{outputs.X}/{shared.X} placeholders are expanded)"
           }
         }
       }
