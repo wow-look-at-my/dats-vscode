@@ -48,6 +48,13 @@ function isNullScalar(node: unknown): boolean {
     return node instanceof Scalar && node.value === null;
 }
 
+// Mirrors the CLI's findMatrixPlaceholder: the name of the first {matrix.X}
+// reference in s (possibly ""), or undefined when there is none.
+function findMatrixPlaceholder(s: string): string | undefined {
+    const [match] = s.matchAll(MATRIX_PLACEHOLDER_PATTERN);
+    return match?.[1];
+}
+
 export function validateDatsDocument(document: vscode.TextDocument): vscode.Diagnostic[] {
     const diagnostics: vscode.Diagnostic[] = [];
     const text = document.getText();
@@ -183,10 +190,10 @@ function validateCommand(node: any, key: 'setup' | 'teardown', label: string, in
         diagnostics.push(new vscode.Diagnostic(range, `${key}: ${label} must not be empty`, vscode.DiagnosticSeverity.Error));
         return;
     }
-    const [ref] = node.value.matchAll(MATRIX_PLACEHOLDER_PATTERN);
-    if (ref) {
+    const ref = findMatrixPlaceholder(node.value);
+    if (ref !== undefined) {
         // Mirrors the CLI's parse error
-        diagnostics.push(new vscode.Diagnostic(range, `${key} command ${index}: {matrix.${ref[1]}} is not available outside tests`, vscode.DiagnosticSeverity.Error));
+        diagnostics.push(new vscode.Diagnostic(range, `${key} command ${index}: {matrix.${ref}} is not available outside tests`, vscode.DiagnosticSeverity.Error));
     }
 }
 
@@ -227,11 +234,11 @@ function validateShared(node: any, lineCounter: LineCounter, document: vscode.Te
     for (const item of filesNode.items) {
         const value = item.value;
         if (!(item.key instanceof Scalar) || !(value instanceof Scalar) || typeof value.value !== 'string') continue;
-        const [ref] = value.value.matchAll(MATRIX_PLACEHOLDER_PATTERN);
-        if (ref) {
+        const ref = findMatrixPlaceholder(value.value);
+        if (ref !== undefined) {
             const range = nodeRange(value, lineCounter, document);
             // Mirrors the CLI's parse error
-            diagnostics.push(new vscode.Diagnostic(range, `shared file "${item.key.value}": {matrix.${ref[1]}} is not available outside tests`, vscode.DiagnosticSeverity.Error));
+            diagnostics.push(new vscode.Diagnostic(range, `shared file "${item.key.value}": {matrix.${ref}} is not available outside tests`, vscode.DiagnosticSeverity.Error));
         }
     }
 }
