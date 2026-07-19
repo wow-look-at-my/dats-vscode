@@ -494,3 +494,303 @@ describe('negated output checks', () => {
         expect(validate(yaml)).toEqual([]);
     });
 });
+
+describe('file-level setup/teardown/shared and $schema', () => {
+    it('accepts the full new-format file the CLI accepts (probe p0-positive.dats)', () => {
+        const yaml = [
+            'shared:',
+            '  files:',
+            `    cfg.json: '{"a": 1}'`,
+            '    sub/cfg.json: nested content',
+            'setup:',
+            '  - echo setup1 {shared.cfg.json}',
+            '  - echo setup2',
+            'teardown:',
+            '  - echo teardown1',
+            '  - echo teardown2',
+            'tests:',
+            '  - desc: matrix test {matrix.word}',
+            '    cmd: cat {inputs.in.txt} && echo {matrix.word} && cat {shared.cfg.json} && echo out > {outputs.result.txt}',
+            '    matrix:',
+            '      word: [hello, howdy]',
+            '      num: [1, 2]',
+            '    inputs:',
+            '      stdin: "stdin {matrix.word}"',
+            '      files:',
+            '        in.txt: "content {matrix.word}"',
+            '      env:',
+            '        MY_VAR: "val {matrix.num}"',
+            '    outputs:',
+            '      stdout:',
+            '        - "{matrix.word}"',
+            '      "!stdout":',
+            '        - "nope {matrix.num}"',
+            '      files:',
+            '        result.txt:',
+            '          match:',
+            '            - out',
+            '  - desc: json matrix',
+            '    cmd: echo hi',
+            '    matrix:',
+            '      v: [a]',
+            '    outputs:',
+            '      json_output:',
+            '        k: "{matrix.v}"',
+            '  - desc: null matrix test',
+            '    cmd: echo hi',
+            '    matrix: null',
+            '    outputs:',
+            '      stdout:',
+            '        - hi',
+            '',
+        ].join('\n');
+        expect(validate(yaml)).toEqual([]);
+    });
+
+    it('accepts single-string setup and teardown commands', () => {
+        expect(validate('setup: echo hi\nteardown: echo bye\ntests:\n  - cmd: echo hi\n')).toEqual([]);
+    });
+
+    it('accepts explicit null setup/teardown/shared (absent, like the CLI)', () => {
+        expect(validate('setup: null\ntests:\n  - cmd: echo hi\n')).toEqual([]);
+        expect(validate('teardown: null\ntests:\n  - cmd: echo hi\n')).toEqual([]);
+        expect(validate('shared: null\ntests:\n  - cmd: echo hi\n')).toEqual([]);
+    });
+
+    it('accepts a top-level $schema key (the CLI does too)', () => {
+        expect(validate('$schema: https://example.com/dats.schema.json\ntests:\n  - cmd: echo hi\n')).toEqual([]);
+    });
+
+    it('still flags setup and shared as unknown TEST-level keys', () => {
+        for (const key of ['setup', 'shared']) {
+            const diags = validate(`tests:\n  - cmd: echo hi\n    ${key}: x\n`);
+            expect(diags).toHaveLength(1);
+            expect(diags[0].message).toBe(`Unknown property "${key}" (dats will refuse to run this file)`);
+            expect(diags[0].severity).toBe(ERROR);
+        }
+    });
+
+    it('still requires tests when only hooks or shared are present', () => {
+        expect(validate('setup: echo hi\n').map(d => d.message)).toEqual(['no tests defined']);
+        expect(validate('setup: echo hi\ntests: []\n').map(d => d.message)).toEqual(['no tests defined']);
+    });
+});
+
+describe('setup/teardown command lists', () => {
+    it('flags empty command lists', () => {
+        for (const key of ['setup', 'teardown']) {
+            const diags = validate(`${key}: []\ntests:\n  - cmd: echo hi\n`);
+            expect(diags).toHaveLength(1);
+            expect(diags[0].message).toBe(`${key}: must list at least one command`);
+            expect(diags[0].severity).toBe(ERROR);
+        }
+    });
+
+    it('flags blank commands in a list', () => {
+        const diags = validate('setup: [""]\ntests:\n  - cmd: echo hi\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('setup: command 1 must not be empty');
+    });
+
+    it('flags a blank single-string command', () => {
+        const diags = validate('setup: "   "\ntests:\n  - cmd: echo hi\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('setup: command must not be empty');
+    });
+
+    it('flags non-string commands (the CLI never coerces a bare 123)', () => {
+        const diags = validate('setup: [123]\ntests:\n  - cmd: echo hi\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('setup: command 1 must be a string');
+    });
+
+    it('flags a mapping-shaped value', () => {
+        const diags = validate('setup: {a: b}\ntests:\n  - cmd: echo hi\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('setup must be a command string or a list of command strings');
+    });
+
+    it('flags matrix placeholders in hook commands, counting the single form as command 1', () => {
+        let diags = validate('setup: echo {matrix.v}\ntests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('setup command 1: {matrix.v} is not available outside tests');
+
+        diags = validate('teardown:\n  - echo one\n  - echo {matrix.v}\ntests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('teardown command 2: {matrix.v} is not available outside tests');
+    });
+
+    it('reports hook diagnostics alongside no tests defined', () => {
+        expect(validate('setup: []\n').map(d => d.message)).toEqual([
+            'setup: must list at least one command',
+            'no tests defined',
+        ]);
+    });
+});
+
+describe('shared fixtures', () => {
+    it('flags shared blocks that declare no files', () => {
+        for (const shared of ['shared: {}\n', 'shared:\n  files: {}\n', 'shared:\n  files: null\n']) {
+            const diags = validate(`${shared}tests:\n  - cmd: echo hi\n`);
+            expect(diags, shared).toHaveLength(1);
+            expect(diags[0].message).toBe('shared: must declare at least one file under files');
+            expect(diags[0].severity).toBe(ERROR);
+        }
+    });
+
+    it('flags unknown shared properties', () => {
+        const diags = validate('shared:\n  files:\n    a.txt: hi\n  bogus: 1\ntests:\n  - cmd: echo hi\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('Unknown shared property "bogus" (dats will refuse to run this file)');
+    });
+
+    it('flags non-local shared file names', () => {
+        for (const name of ['../x', '/abs']) {
+            const diags = validate(`shared:\n  files:\n    ${name}: hi\ntests:\n  - cmd: echo hi\n`);
+            expect(diags).toHaveLength(1);
+            expect(diags[0].message).toBe(`shared file name "${name}" must be a relative path that stays inside the shared directory`);
+        }
+    });
+
+    it('flags a non-mapping shared value', () => {
+        const diags = validate('shared: hello\ntests:\n  - cmd: echo hi\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('"shared" must be a mapping with a "files" key');
+    });
+
+    it('flags matrix placeholders in shared file contents', () => {
+        const diags = validate('shared:\n  files:\n    cfg.txt: "value {matrix.v}"\ntests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('shared file "cfg.txt": {matrix.v} is not available outside tests');
+    });
+});
+
+describe('matrix declarations', () => {
+    it('flags invalid variable names', () => {
+        for (const name of ['1bad', 'foo-bar']) {
+            const diags = validate(`tests:\n  - cmd: echo hi\n    matrix:\n      ${name}: [a]\n`);
+            expect(diags).toHaveLength(1);
+            expect(diags[0].message).toBe(`matrix variable name "${name}" must match ^[A-Za-z_][A-Za-z0-9_]*$`);
+            expect(diags[0].severity).toBe(ERROR);
+        }
+    });
+
+    it('flags an empty matrix mapping', () => {
+        const diags = validate('tests:\n  - cmd: echo hi\n    matrix: {}\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('matrix must declare at least one variable');
+    });
+
+    it('flags a non-mapping matrix', () => {
+        const diags = validate('tests:\n  - cmd: echo hi\n    matrix: hello\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('matrix must be a mapping of variable names to value lists');
+    });
+
+    it('flags non-sequence value lists (a null value lands there too)', () => {
+        for (const values of ['hello', 'null']) {
+            const diags = validate(`tests:\n  - cmd: echo hi\n    matrix:\n      v: ${values}\n`);
+            expect(diags, values).toHaveLength(1);
+            expect(diags[0].message).toBe('matrix variable "v" must list its values as a sequence');
+        }
+    });
+
+    it('flags empty value lists', () => {
+        const diags = validate('tests:\n  - cmd: echo hi\n    matrix:\n      v: []\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('matrix variable "v" must list at least one value');
+    });
+
+    it('flags non-scalar and null values', () => {
+        for (const values of ['[[a]]', '[null]']) {
+            const diags = validate(`tests:\n  - cmd: echo hi\n    matrix:\n      v: ${values}\n`);
+            expect(diags, values).toHaveLength(1);
+            expect(diags[0].message).toBe('matrix variable "v" value 1: values must be scalar strings, numbers, or booleans');
+        }
+    });
+
+    it('flags duplicate values, compared after stringification like the CLI', () => {
+        let diags = validate('tests:\n  - cmd: echo hi\n    matrix:\n      v: [a, a]\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('matrix variable "v" lists duplicate value "a"');
+
+        // x and "x" (and 1.50 and "1.50") produce byte-identical instances
+        diags = validate('tests:\n  - cmd: echo {matrix.v}\n    matrix:\n      v: [x, "x"]\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('matrix variable "v" lists duplicate value "x"');
+
+        diags = validate('tests:\n  - cmd: echo {matrix.v}\n    matrix:\n      v: [1.50, "1.50"]\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('matrix variable "v" lists duplicate value "1.50"');
+    });
+
+    it('flags duplicate variable names (the yaml parser reports its own error too)', () => {
+        const diags = validate('tests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n      v: [b]\n');
+        expect(diags.map(d => d.message)).toContain('matrix variable "v" declared more than once');
+        expect(diags).toHaveLength(2);
+    });
+});
+
+describe('{matrix.X} references', () => {
+    it('flags undeclared references in every scanned field', () => {
+        const cases: Record<string, string> = {
+            cmd: 'tests:\n  - cmd: echo {matrix.nope}\n    matrix:\n      v: [a]\n',
+            desc: 'tests:\n  - desc: hello {matrix.nope}\n    cmd: echo hi\n    matrix:\n      v: [a]\n',
+            'stdout pattern': 'tests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n    outputs:\n      stdout:\n        - "{matrix.nope}"\n',
+            json_output: 'tests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n    outputs:\n      json_output:\n        k: "{matrix.nope}"\n',
+            'env value': 'tests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n    inputs:\n      env:\n        MY_VAR: "{matrix.nope}"\n',
+            'file content': 'tests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n    inputs:\n      files:\n        in.txt: "{matrix.nope}"\n',
+            stdin: 'tests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n    inputs:\n      stdin: "{matrix.nope}"\n',
+        };
+        for (const [field, yaml] of Object.entries(cases)) {
+            const diags = validate(yaml);
+            expect(diags, field).toHaveLength(1);
+            expect(diags[0].message, field).toBe('{matrix.nope} is not a declared matrix variable (declared: v)');
+            expect(diags[0].severity).toBe(ERROR);
+        }
+    });
+
+    it('lists declared variables in declaration order', () => {
+        const diags = validate('tests:\n  - cmd: echo {matrix.nope}\n    matrix:\n      b: [1]\n      a: [2]\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('{matrix.nope} is not a declared matrix variable (declared: b, a)');
+    });
+
+    it('flags references in a test that declares no matrix, explicit null included', () => {
+        let diags = validate('tests:\n  - cmd: echo {matrix.nope}\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('{matrix.nope} is used but the test declares no matrix');
+
+        diags = validate('tests:\n  - cmd: echo {matrix.x}\n    matrix: null\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('{matrix.x} is used but the test declares no matrix');
+    });
+
+    it('flags the empty-name form {matrix.}', () => {
+        const diags = validate('tests:\n  - cmd: echo {matrix.}\n    matrix:\n      v: [a]\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('{matrix.} must name a matrix variable');
+    });
+
+    it('treats any {matrix.X} text as a reference, even names a matrix could not declare', () => {
+        const diags = validate('tests:\n  - cmd: echo {matrix.foo-bar}\n    matrix:\n      v: [a]\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('{matrix.foo-bar} is not a declared matrix variable (declared: v)');
+    });
+
+    it('does not scan fixture file names or env var names (out of scope, like the CLI)', () => {
+        const yaml = [
+            'tests:',
+            '  - cmd: echo hi',
+            '    matrix:',
+            '      v: [a]',
+            '    inputs:',
+            '      files:',
+            '        "{matrix.v}.txt": content',
+            '      env:',
+            '        "{matrix.v}": value',
+            '',
+        ].join('\n');
+        expect(validate(yaml)).toEqual([]);
+    });
+});
