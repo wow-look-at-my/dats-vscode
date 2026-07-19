@@ -9,6 +9,11 @@ const EXIT_VAR_PATTERN = /^EXIT_(SUCCESS|FAILURE)$/;
 const GO_DURATION_PATTERN = /^\+?(0|((\d+(\.\d*)?|\.\d+)(ns|us|µs|μs|ms|s|m|h))+)$/;
 
 const UNKNOWN_KEY_SUFFIX = ' (dats will refuse to run this file)';
+// {matrix.X} references, including the malformed empty-name form {matrix.}
+// so validation can reject it (the CLI's matrixPlaceholderRe).
+const MATRIX_PLACEHOLDER_PATTERN = /\{matrix\.([^}]*)\}/g;
+// The allowed shape of a matrix variable name (the CLI's matrixNameRe).
+const MATRIX_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 // A bare or quoted integer: accepted for exit (0-255) and timeout (seconds).
 const INTEGER_PATTERN = /^[-+]?[0-9]+$/;
 // Number scalars written in float form ("1.5", "2.0", "1e3"). yaml resolves
@@ -43,6 +48,13 @@ function isNullScalar(node: unknown): boolean {
     return node instanceof Scalar && node.value === null;
 }
 
+// Mirrors the CLI's findMatrixPlaceholder: the name of the first {matrix.X}
+// reference in s (possibly ""), or undefined when there is none.
+function findMatrixPlaceholder(s: string): string | undefined {
+    const [match] = s.matchAll(MATRIX_PLACEHOLDER_PATTERN);
+    return match?.[1];
+}
+
 export function validateDatsDocument(document: vscode.TextDocument): vscode.Diagnostic[] {
     const diagnostics: vscode.Diagnostic[] = [];
     const text = document.getText();
@@ -72,13 +84,28 @@ export function validateDatsDocument(document: vscode.TextDocument): vscode.Diag
         return diagnostics;
     }
 
-    // Check for unknown top-level keys
+    // Check for unknown top-level keys ($schema is accepted by the CLI too)
+    const topLevelKeys = new Set(['tests', 'shared', 'setup', 'teardown', '$schema']);
     for (const item of root.items) {
         const key = item.key;
-        if (key instanceof Scalar && key.value !== 'tests') {
+        if (key instanceof Scalar && !topLevelKeys.has(key.value as string)) {
             const range = nodeRange(key, lineCounter, document);
             diagnostics.push(new vscode.Diagnostic(range, `Unknown property "${key.value}"${UNKNOWN_KEY_SUFFIX}`, vscode.DiagnosticSeverity.Error));
         }
+    }
+
+    // Validate file-level setup/teardown hooks and shared fixtures before the
+    // tests checks below, so a hooks-only file still gets these diagnostics
+    // alongside "no tests defined"
+    for (const hookKey of ['setup', 'teardown'] as const) {
+        const hookNode = root.get(hookKey, true);
+        if (hookNode !== undefined) {
+            validateCommandList(hookNode, hookKey, lineCounter, document, diagnostics);
+        }
+    }
+    const sharedNode = root.get('shared', true);
+    if (sharedNode !== undefined) {
+        validateShared(sharedNode, lineCounter, document, diagnostics);
     }
 
     // Validate tests array
@@ -115,8 +142,109 @@ export function validateDatsDocument(document: vscode.TextDocument): vscode.Diag
     return diagnostics;
 }
 
+// Mirrors the CLI's CommandList: a file-level setup/teardown value is a
+// single command string or a list of command strings. Alias values are left
+// to the CLI (it resolves them; the walker cannot).
+function validateCommandList(node: any, key: 'setup' | 'teardown', lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
+    // `setup:` with no value is fine (no commands), like the CLI
+    if (node === null || isNullScalar(node)) return;
+
+    if (node instanceof Scalar) {
+        // The single-string form counts as command 1 in the CLI's errors
+        validateCommand(node, key, 'command', 1, lineCounter, document, diagnostics);
+        return;
+    }
+
+    if (isSeq(node)) {
+        if (node.items.length === 0) {
+            const range = nodeRange(node, lineCounter, document);
+            // Mirrors the CLI's parse error
+            diagnostics.push(new vscode.Diagnostic(range, `${key}: must list at least one command`, vscode.DiagnosticSeverity.Error));
+            return;
+        }
+        node.items.forEach((item: unknown, i: number) => {
+            validateCommand(item, key, `command ${i + 1}`, i + 1, lineCounter, document, diagnostics);
+        });
+        return;
+    }
+
+    if (isMap(node)) {
+        const range = nodeRange(node, lineCounter, document);
+        // Mirrors the CLI's parse error
+        diagnostics.push(new vscode.Diagnostic(range, `${key} must be a command string or a list of command strings`, vscode.DiagnosticSeverity.Error));
+    }
+}
+
+// Mirrors the CLI's commandFromNode: only true strings are commands (a bare
+// 123 is never coerced) and blank commands are rejected. Valid commands are
+// then checked for {matrix.X}, which can never resolve in file-level hooks.
+function validateCommand(node: any, key: 'setup' | 'teardown', label: string, index: number, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
+    const range = nodeRange(node, lineCounter, document);
+    if (!(node instanceof Scalar) || typeof node.value !== 'string') {
+        // Mirrors the CLI's parse error
+        diagnostics.push(new vscode.Diagnostic(range, `${key}: ${label} must be a string`, vscode.DiagnosticSeverity.Error));
+        return;
+    }
+    if (node.value.trim() === '') {
+        // Mirrors the CLI's parse error
+        diagnostics.push(new vscode.Diagnostic(range, `${key}: ${label} must not be empty`, vscode.DiagnosticSeverity.Error));
+        return;
+    }
+    const ref = findMatrixPlaceholder(node.value);
+    if (ref !== undefined) {
+        // Mirrors the CLI's parse error
+        diagnostics.push(new vscode.Diagnostic(range, `${key} command ${index}: {matrix.${ref}} is not available outside tests`, vscode.DiagnosticSeverity.Error));
+    }
+}
+
+function validateShared(node: any, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
+    // `shared:` with no value is fine (no shared files), like the CLI
+    if (node === null || isNullScalar(node)) return;
+
+    if (!isMap(node)) {
+        // Alias values are left to the CLI (it resolves them; the walker cannot)
+        if (node instanceof Scalar || isSeq(node)) {
+            const range = nodeRange(node, lineCounter, document);
+            diagnostics.push(new vscode.Diagnostic(range, '"shared" must be a mapping with a "files" key', vscode.DiagnosticSeverity.Error));
+        }
+        return;
+    }
+
+    for (const item of node.items) {
+        const key = item.key;
+        if (key instanceof Scalar && key.value !== 'files') {
+            const range = nodeRange(key, lineCounter, document);
+            diagnostics.push(new vscode.Diagnostic(range, `Unknown shared property "${key.value}"${UNKNOWN_KEY_SUFFIX}`, vscode.DiagnosticSeverity.Error));
+        }
+    }
+
+    const filesNode = node.get('files', true);
+    if (!filesNode || isNullScalar(filesNode) || (isMap(filesNode) && filesNode.items.length === 0)) {
+        const range = nodeRange(filesNode ?? node, lineCounter, document);
+        // Mirrors the CLI's parse error
+        diagnostics.push(new vscode.Diagnostic(range, 'shared: must declare at least one file under files', vscode.DiagnosticSeverity.Error));
+        return;
+    }
+    if (!isMap(filesNode)) return;
+
+    validateFixtureNames(filesNode as YAMLMap, 'shared', lineCounter, document, diagnostics);
+
+    // {matrix.X} can never resolve in shared file contents: they are written
+    // once per file, where no test instance exists
+    for (const item of filesNode.items) {
+        const value = item.value;
+        if (!(item.key instanceof Scalar) || !(value instanceof Scalar) || typeof value.value !== 'string') continue;
+        const ref = findMatrixPlaceholder(value.value);
+        if (ref !== undefined) {
+            const range = nodeRange(value, lineCounter, document);
+            // Mirrors the CLI's parse error
+            diagnostics.push(new vscode.Diagnostic(range, `shared file "${item.key.value}": {matrix.${ref}} is not available outside tests`, vscode.DiagnosticSeverity.Error));
+        }
+    }
+}
+
 function validateTest(test: YAMLMap, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
-    const validKeys = new Set(['desc', 'exit', 'cmd', 'timeout', 'inputs', 'outputs']);
+    const validKeys = new Set(['desc', 'exit', 'cmd', 'timeout', 'matrix', 'inputs', 'outputs']);
 
     // Check for unknown keys
     for (const item of test.items) {
@@ -159,6 +287,187 @@ function validateTest(test: YAMLMap, lineCounter: LineCounter, document: vscode.
     const outputsNode = test.get('outputs', true);
     if (outputsNode && isMap(outputsNode)) {
         validateOutputs(outputsNode as YAMLMap, lineCounter, document, diagnostics);
+    }
+
+    // Validate the matrix block and every {matrix.X} reference in the test's
+    // substitution scope (an explicit null matrix means absent, like the CLI)
+    const matrixNode = test.get('matrix', true);
+    const hasMatrix = matrixNode !== undefined && matrixNode !== null && !isNullScalar(matrixNode);
+    const declared = hasMatrix ? validateMatrix(matrixNode, lineCounter, document, diagnostics) : null;
+    validateMatrixRefs(test, hasMatrix, declared, lineCounter, document, diagnostics);
+}
+
+// Mirrors the CLI's Matrix.UnmarshalYAML. Returns the declared variable
+// names in declaration order, or null when the block's shape prevents
+// collecting them (the shape diagnostic already flags the file, so reference
+// checks are skipped rather than cascading).
+function validateMatrix(node: any, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]): string[] | null {
+    if (!isMap(node)) {
+        // Alias values are left to the CLI (it resolves them; the walker cannot)
+        if (node instanceof Scalar || isSeq(node)) {
+            const range = nodeRange(node, lineCounter, document);
+            // Mirrors the CLI's parse error
+            diagnostics.push(new vscode.Diagnostic(range, 'matrix must be a mapping of variable names to value lists', vscode.DiagnosticSeverity.Error));
+        }
+        return null;
+    }
+    if (node.items.length === 0) {
+        const range = nodeRange(node, lineCounter, document);
+        // Mirrors the CLI's parse error
+        diagnostics.push(new vscode.Diagnostic(range, 'matrix must declare at least one variable', vscode.DiagnosticSeverity.Error));
+        return null;
+    }
+
+    const declared: string[] = [];
+    const seen = new Set<string>();
+    for (const pair of node.items) {
+        const key = pair.key;
+        if (!(key instanceof Scalar)) continue;
+        const name = String(key.value);
+        const keyRange = nodeRange(key, lineCounter, document);
+
+        if (!MATRIX_NAME_PATTERN.test(name)) {
+            // Mirrors the CLI's parse error
+            diagnostics.push(new vscode.Diagnostic(keyRange, `matrix variable name "${name}" must match ^[A-Za-z_][A-Za-z0-9_]*$`, vscode.DiagnosticSeverity.Error));
+        }
+        if (seen.has(name)) {
+            // Mirrors the CLI's parse error (the yaml parser reports the
+            // duplicate mapping key as its own diagnostic too)
+            diagnostics.push(new vscode.Diagnostic(keyRange, `matrix variable "${name}" declared more than once`, vscode.DiagnosticSeverity.Error));
+        } else {
+            seen.add(name);
+            declared.push(name);
+        }
+
+        const value = pair.value;
+        if (!isSeq(value)) {
+            // A null value lands here too, matching the CLI; alias values are
+            // left to the CLI
+            if (value == null || value instanceof Scalar || isMap(value)) {
+                const range = nodeRange(value ?? key, lineCounter, document);
+                // Mirrors the CLI's parse error
+                diagnostics.push(new vscode.Diagnostic(range, `matrix variable "${name}" must list its values as a sequence`, vscode.DiagnosticSeverity.Error));
+            }
+            continue;
+        }
+        if (value.items.length === 0) {
+            const range = nodeRange(value, lineCounter, document);
+            // Mirrors the CLI's parse error
+            diagnostics.push(new vscode.Diagnostic(range, `matrix variable "${name}" must list at least one value`, vscode.DiagnosticSeverity.Error));
+            continue;
+        }
+        const seenValues = new Set<string>();
+        value.items.forEach((item: unknown, i: number) => {
+            if (!(item instanceof Scalar) || item.value === null) {
+                const range = nodeRange(item ?? value, lineCounter, document);
+                // Mirrors the CLI's parse error (null has no substitution text)
+                diagnostics.push(new vscode.Diagnostic(range, `matrix variable "${name}" value ${i + 1}: values must be scalar strings, numbers, or booleans`, vscode.DiagnosticSeverity.Error));
+                return;
+            }
+            // The CLI compares values after stringification (the literal
+            // scalar text): 1.50 and "1.50" produce byte-identical instances
+            const text = typeof item.value === 'string' ? item.value : scalarSource(item);
+            if (seenValues.has(text)) {
+                const range = nodeRange(item, lineCounter, document);
+                // Mirrors the CLI's parse error
+                diagnostics.push(new vscode.Diagnostic(range, `matrix variable "${name}" lists duplicate value "${text}"`, vscode.DiagnosticSeverity.Error));
+            } else {
+                seenValues.add(text);
+            }
+        });
+    }
+    return declared;
+}
+
+// Mirrors the CLI's validateMatrixRefs: every {matrix.X} reference in the
+// test's substitution scope must name a variable declared by THIS test's
+// matrix. declared is null when the matrix block was malformed; only the
+// empty-name form is reported then.
+function validateMatrixRefs(test: YAMLMap, hasMatrix: boolean, declared: string[] | null, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
+    scanMatrixScope(test, node => {
+        for (const match of (node.value as string).matchAll(MATRIX_PLACEHOLDER_PATTERN)) {
+            const name = match[1];
+            let message: string | undefined;
+            if (name === '') {
+                // Mirrors the CLI's parse error
+                message = '{matrix.} must name a matrix variable';
+            } else if (!hasMatrix) {
+                // Mirrors the CLI's parse error
+                message = `{matrix.${name}} is used but the test declares no matrix`;
+            } else if (declared && !declared.includes(name)) {
+                // Mirrors the CLI's parse error
+                message = `{matrix.${name}} is not a declared matrix variable (declared: ${declared.join(', ')})`;
+            }
+            if (message) {
+                const range = nodeRange(node, lineCounter, document);
+                diagnostics.push(new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Error));
+            }
+        }
+    });
+}
+
+// Calls visit on every string scalar in the test's matrix substitution
+// scope: desc, cmd, inputs.stdin, inputs.files contents, inputs.env values,
+// every output pattern (list and line-map forms, files/!files match/notMatch
+// entries), and every string scalar inside json_output (mapping keys
+// included). Fixture file names, env var names, exit, timeout, and the
+// matrix block itself are out of scope, exactly like the CLI's
+// applyToMatrixScope. Alias nodes are not followed (the CLI follows them
+// inside json_output; the walker under-reports there rather than guessing).
+function scanMatrixScope(test: YAMLMap, visit: (node: Scalar) => void) {
+    const visitString = (node: unknown) => {
+        if (node instanceof Scalar && typeof node.value === 'string') visit(node);
+    };
+
+    visitString(test.get('desc', true));
+    visitString(test.get('cmd', true));
+
+    const inputs = test.get('inputs', true);
+    if (isMap(inputs)) {
+        visitString(inputs.get('stdin', true));
+        for (const mapKey of ['files', 'env']) {
+            const valueMap = inputs.get(mapKey, true);
+            if (!isMap(valueMap)) continue;
+            for (const pair of valueMap.items) visitString(pair.value);
+        }
+    }
+
+    const outputs = test.get('outputs', true);
+    if (!isMap(outputs)) return;
+    for (const checkKey of ['stdout', 'stderr', '!stdout', '!stderr']) {
+        const check = outputs.get(checkKey, true);
+        if (isSeq(check)) {
+            for (const item of check.items) visitString(item);
+        } else if (isMap(check)) {
+            for (const pair of check.items) visitString(pair.value);
+        }
+    }
+    for (const filesKey of ['files', '!files']) {
+        const filesMap = outputs.get(filesKey, true);
+        if (!isMap(filesMap)) continue;
+        for (const filePair of filesMap.items) {
+            if (!isMap(filePair.value)) continue;
+            for (const patternsKey of ['match', 'notMatch']) {
+                const patterns = (filePair.value as YAMLMap).get(patternsKey, true);
+                if (!isSeq(patterns)) continue;
+                for (const item of patterns.items) visitString(item);
+            }
+        }
+    }
+    visitJsonOutputStrings(outputs.get('json_output', true), visitString);
+}
+
+// Every string scalar in the json_output node tree, mapping keys included.
+function visitJsonOutputStrings(node: unknown, visitString: (node: unknown) => void) {
+    if (node instanceof Scalar) {
+        visitString(node);
+    } else if (isMap(node)) {
+        for (const pair of node.items) {
+            visitJsonOutputStrings(pair.key, visitString);
+            visitJsonOutputStrings(pair.value, visitString);
+        }
+    } else if (isSeq(node)) {
+        for (const item of node.items) visitJsonOutputStrings(item, visitString);
     }
 }
 
@@ -266,7 +575,8 @@ function validateEnv(node: any, lineCounter: LineCounter, document: vscode.TextD
     }
 }
 
-function validateFixtureNames(filesMap: YAMLMap, kind: 'input' | 'output', lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
+function validateFixtureNames(filesMap: YAMLMap, kind: 'input' | 'output' | 'shared', lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
+    const dir = kind === 'shared' ? 'shared' : 'test';
     for (const item of filesMap.items) {
         const key = item.key;
         if (!(key instanceof Scalar)) continue;
@@ -274,7 +584,7 @@ function validateFixtureNames(filesMap: YAMLMap, kind: 'input' | 'output', lineC
         if (!isLocalRelativePath(name)) {
             const range = nodeRange(key, lineCounter, document);
             // Mirrors the CLI's parse error
-            diagnostics.push(new vscode.Diagnostic(range, `${kind} file name "${name}" must be a relative path that stays inside the test directory`, vscode.DiagnosticSeverity.Error));
+            diagnostics.push(new vscode.Diagnostic(range, `${kind} file name "${name}" must be a relative path that stays inside the ${dir} directory`, vscode.DiagnosticSeverity.Error));
         }
     }
 }
@@ -381,7 +691,7 @@ function validateFileCheck(fileCheck: YAMLMap, lineCounter: LineCounter, documen
 }
 
 function nodeRange(node: any, lineCounter: LineCounter, document: vscode.TextDocument): vscode.Range {
-    if (node.range) {
+    if (node?.range) {
         const start = lineCounter.linePos(node.range[0]);
         const end = lineCounter.linePos(node.range[1]);
         return new vscode.Range(start.line - 1, start.col - 1, end.line - 1, end.col - 1);
