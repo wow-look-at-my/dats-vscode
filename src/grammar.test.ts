@@ -176,6 +176,42 @@ describe('dats grammar injection over the built-in YAML grammar', () => {
         expect(placeholder).toContain('string.quoted.double.yaml');
     });
 
+    it('tokenizes new-format files (setup/teardown/shared/matrix) without breaking', () => {
+        const tokens = tokenize([
+            'shared:',
+            '  files:',
+            '    cfg.json: \'{"a": 1}\'',
+            'setup:',
+            '  - echo ready',
+            'tests:',
+            '  - cmd: cat {shared.cfg.json} && echo {matrix.word}',
+            '    matrix:',
+            '      word: [hello, howdy]',
+        ]);
+
+        // the new keys are plain YAML keys for the built-in grammar
+        expect(scopesOf(tokens, 0, 'shared')).toContain('entity.name.tag.yaml');
+        expect(scopesOf(tokens, 3, 'setup')).toContain('entity.name.tag.yaml');
+        expect(scopesOf(tokens, 7, 'matrix')).toContain('entity.name.tag.yaml');
+
+        // setup commands are NOT cmd lines: no shell scopes (documented gap)
+        for (const token of tokens[4]) {
+            expect(token.scopes.filter(s => s.endsWith('.shell'))).toEqual([]);
+        }
+
+        // cmd lines still get their shell scopes
+        expect(scopesOf(tokens, 6, 'cat')).toContain('entity.name.function.shell');
+        expect(scopesOf(tokens, 6, 'echo')).toContain('entity.name.function.shell');
+
+        // {shared.X}/{matrix.X} are ordinary shell arguments, not dats
+        // placeholders -- highlighting them is a documented cosmetic gap
+        for (const placeholder of ['{shared.cfg.json}', '{matrix.word}']) {
+            const scopes = scopesOf(tokens, 6, placeholder);
+            expect(scopes).toContain('string.unquoted.argument.shell');
+            expect(scopes).not.toContain('variable.parameter.dats');
+        }
+    });
+
     it('only treats a line-leading cmd key as a shell command', () => {
         const tokens = tokenize([
             'tests:',
