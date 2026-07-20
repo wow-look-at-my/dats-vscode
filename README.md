@@ -61,10 +61,9 @@ validation, and can be wired into a YAML language server manually. When the runn
 schema changes, re-copy it here; it must stay byte-identical to the runner's master copy.
 
 Current copy: synced from
-[wow-look-at-my/dats@0a267b6](https://github.com/wow-look-at-my/dats/commit/0a267b6ee275d2a967c4b26321c47196ff2ed30d)
-(adds file-level `setup`/`teardown`, `shared` fixtures with `{shared.X}` placeholders, and
-per-test `matrix` with `{matrix.X}` substitution, merged as
-[dats#22](https://github.com/wow-look-at-my/dats/pull/22)).
+[wow-look-at-my/dats@d76c889](https://github.com/wow-look-at-my/dats/commit/d76c88907078eeae0ce78a02f2bf84ca18cdc164)
+(adds `outputs.snapshot` golden-file assertions, blessed with the runner's `--update` flag,
+merged as [dats#24](https://github.com/wow-look-at-my/dats/pull/24)).
 
 ## Links
 
