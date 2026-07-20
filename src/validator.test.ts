@@ -65,6 +65,7 @@ describe('validateDatsDocument', () => {
             '      "!files":',
             '        unexpected.txt:',
             '          exists: true',
+            '      snapshot: true',
             '      json_output: null',
             '',
         ].join('\n');
@@ -792,5 +793,109 @@ describe('{matrix.X} references', () => {
             '',
         ].join('\n');
         expect(validate(yaml)).toEqual([]);
+    });
+});
+
+// Every accept/reject verdict and message below was verified against
+// dats@d76c889 (dats syntax) probe runs.
+describe('outputs.snapshot', () => {
+    it('accepts scalar booleans, including the YAML 1.1 compat spellings the CLI decodes', () => {
+        for (const value of ['true', 'false', 'True', 'TRUE', 'yes', '"yes"', 'y', 'on', 'Off', 'null']) {
+            const yaml = `tests:\n  - cmd: echo hi\n    outputs:\n      snapshot: ${value}\n`;
+            expect(validate(yaml), `snapshot: ${value}`).toEqual([]);
+        }
+    });
+
+    it('accepts stream-boolean mappings', () => {
+        for (const body of [
+            '        stdout: true',
+            '        stderr: true',
+            '        stdout: true\n        stderr: true',
+            '        stdout: false\n        stderr: true',
+            '        stdout: On',
+        ]) {
+            const yaml = `tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n${body}\n`;
+            expect(validate(yaml), body).toEqual([]);
+        }
+    });
+
+    it('leaves an alias at the snapshot key to the CLI (which resolves it)', () => {
+        const yaml = 'tests:\n  - desc: &b true\n    cmd: echo hi\n    outputs:\n      snapshot: *b\n';
+        expect(validate(yaml)).toEqual([]);
+    });
+
+    it('flags non-boolean scalars, sequences, and quoted "true" (a string to the CLI)', () => {
+        for (const value of ['"true"', '"TRUE"', '1', '""', '[true]', 'enabled']) {
+            const yaml = `tests:\n  - cmd: echo hi\n    outputs:\n      snapshot: ${value}\n`;
+            const diags = validate(yaml);
+            expect(diags, `snapshot: ${value}`).toHaveLength(1);
+            expect(diags[0].message).toBe('snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)');
+            expect(diags[0].severity).toBe(ERROR);
+        }
+    });
+
+    it('flags unknown stream names', () => {
+        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n        stdout: true\n        foo: true\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('snapshot: unknown key "foo" (allowed: stdout, stderr)');
+        expect(diags[0].severity).toBe(ERROR);
+    });
+
+    it('flags a merge key like any other unknown key (the CLI does not merge here)', () => {
+        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n        <<: {stdout: true}\n');
+        expect(diags.map(d => d.message)).toContain('snapshot: unknown key "<<" (allowed: stdout, stderr)');
+    });
+
+    it('flags duplicate stream keys (the yaml parser reports its own error too)', () => {
+        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n        stdout: true\n        stdout: true\n');
+        expect(diags.map(d => d.message)).toContain('snapshot: stdout declared more than once');
+        expect(diags).toHaveLength(2);
+    });
+
+    it('flags non-boolean stream values, including quoted "false" and aliases', () => {
+        for (const [body, stream] of [
+            ['        stdout: 1', 'stdout'],
+            ['        stdout: "false"', 'stdout'],
+            ['        stdout: [true]', 'stdout'],
+            ['        stderr: text', 'stderr'],
+        ] as const) {
+            const yaml = `tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n${body}\n`;
+            const diags = validate(yaml);
+            expect(diags, body).toHaveLength(1);
+            expect(diags[0].message).toBe(`snapshot: ${stream} must be a boolean`);
+            expect(diags[0].severity).toBe(ERROR);
+        }
+
+        // The CLI's manual mapping walk does not resolve alias values
+        const diags = validate('tests:\n  - desc: &b true\n    cmd: echo hi\n    outputs:\n      snapshot:\n        stdout: *b\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('snapshot: stdout must be a boolean');
+    });
+
+    it('flags mappings that enable no stream (empty, all-false, or null values)', () => {
+        for (const value of ['{}', '{stdout: false}', '{stdout: null}', '{stderr: no}', '{stdout: false, stderr: false}']) {
+            const yaml = `tests:\n  - cmd: echo hi\n    outputs:\n      snapshot: ${value}\n`;
+            const diags = validate(yaml);
+            expect(diags, `snapshot: ${value}`).toHaveLength(1);
+            expect(diags[0].message).toBe('snapshot: must enable at least one of stdout, stderr');
+            expect(diags[0].severity).toBe(ERROR);
+        }
+
+        // A stream key with no value decodes to false too
+        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n        stdout:\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('snapshot: must enable at least one of stdout, stderr');
+    });
+
+    it('does not cascade the enables-nothing error onto entry-level errors (the CLI stops at its first)', () => {
+        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n        stdout: false\n        foo: true\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('snapshot: unknown key "foo" (allowed: stdout, stderr)');
+    });
+
+    it('still flags snapshot as an unknown TEST-level key', () => {
+        const diags = validate('tests:\n  - cmd: echo hi\n    snapshot: true\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('Unknown property "snapshot" (dats will refuse to run this file)');
     });
 });

@@ -108,6 +108,14 @@ describe('DatsHoverProvider', () => {
         expect(text).toContain('deep-equals');
     });
 
+    it('documents snapshot', () => {
+        const text = hoverText(['      snapshot: true'], 0, 9);
+        expect(text).toContain('**snapshot**');
+        expect(text).toContain('.snapshots/');
+        expect(text).toContain('--update');
+        expect(text).toContain('{testdir}');
+    });
+
     it('names exactly the two recognized exit code names', () => {
         const text = hoverText(['    exit: 1'], 0, 5);
         expect(text).toContain('EXIT_SUCCESS');
