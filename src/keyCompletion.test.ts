@@ -116,11 +116,12 @@ describe('context-aware key completion', () => {
         expect(labels).not.toContain('cmd'); // already present
     });
 
-    it('offers output keys (including json_output) inside outputs', () => {
+    it('offers output keys (including json_output and snapshot) inside outputs', () => {
         const text = 'tests:\n  - cmd: echo hi\n    outputs:\n      stdout:\n        - "x"\n';
         const items = complete(text, 3, 6)!;
         const labels = items.map(i => i.label);
         expect(labels).toContain('json_output');
+        expect(labels).toContain('snapshot');
         expect(labels).toContain('stderr');
         expect(labels).toContain('!stdout');
         expect(labels).toContain('!stderr');

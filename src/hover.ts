@@ -61,6 +61,10 @@ const FIELD_DOCS: Record<string, { summary: string; detail?: string }> = {
         summary: 'Negative file assertions',
         detail: 'Map of filename to checks, each inverted: exists: true means the file must NOT exist, match patterns must NOT match the contents, and notMatch patterns MUST match. An empty check ({} or nothing) asserts the file must NOT exist.'
     },
+    snapshot: {
+        summary: 'Golden-file (snapshot) assertion for output streams',
+        detail: 'true snapshots stdout; or a map of stream booleans (stdout / stderr), of which at least one must be true; false or omitted disables. Captured output must byte-match `<file>.snapshots/NNN-<slug>.<stream>.golden` next to the .dats file (NNN = zero-padded instance number, slug from the instance name), after temp paths are normalized to {testdir}/{shareddir}/{tmproot} tokens. Run the dats CLI with --update to (re)write goldens from actual output and prune stale ones.'
+    },
     json_output: {
         summary: 'Expected JSON value of the whole stdout',
         detail: 'Stdout must parse as a single JSON value that deep-equals this value: object keys are order-insensitive, array elements are order-sensitive, numbers compare by value. Any JSON value is allowed, including null.'

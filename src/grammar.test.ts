@@ -212,6 +212,41 @@ describe('dats grammar injection over the built-in YAML grammar', () => {
         }
     });
 
+    it('tokenizes snapshot-format files (outputs.snapshot) without breaking', () => {
+        const tokens = tokenize([
+            'tests:',
+            '  - cmd: echo hello',
+            '    outputs:',
+            '      snapshot: true',
+            '  - cmd: echo again',
+            '    outputs:',
+            '      snapshot:',
+            '        stdout: true',
+            '        stderr: false',
+        ]);
+
+        // the new key is a plain YAML key for the built-in grammar, in both
+        // its scalar and stream-map forms
+        expect(scopesOf(tokens, 3, 'snapshot')).toContain('entity.name.tag.yaml');
+        expect(scopesOf(tokens, 6, 'snapshot')).toContain('entity.name.tag.yaml');
+        expect(scopesOf(tokens, 7, 'stdout')).toContain('entity.name.tag.yaml');
+        expect(scopesOf(tokens, 8, 'stderr')).toContain('entity.name.tag.yaml');
+
+        // snapshot lines are NOT cmd lines: no shell scopes leak onto them
+        for (const lineIdx of [3, 6, 7, 8]) {
+            for (const token of tokens[lineIdx]) {
+                expect(
+                    token.scopes.filter(s => s.endsWith('.shell')),
+                    `line ${lineIdx} token ${JSON.stringify(token.text)}`
+                ).toEqual([]);
+            }
+        }
+
+        // cmd lines still get their shell scopes
+        expect(scopesOf(tokens, 1, 'echo')).toContain('entity.name.function.shell');
+        expect(scopesOf(tokens, 4, 'echo')).toContain('entity.name.function.shell');
+    });
+
     it('only treats a line-leading cmd key as a shell command', () => {
         const tokens = tokenize([
             'tests:',
