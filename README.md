@@ -7,7 +7,7 @@ DATS is a declarative YAML format for defining command-line tests, executed nati
 ## Features
 
 - Syntax highlighting for `.dats` files, including shell highlighting of `cmd` values and `{inputs.X}` / `{outputs.X}` placeholders
-- Inline diagnostics from a built-in validator that mirrors the runner's strict parsing: unknown keys, missing/empty `cmd`, exit code and timeout validation, output check shapes, `no tests defined`, file-level `setup`/`teardown`/`shared` and per-test `matrix` validation
+- Inline diagnostics from a built-in validator that mirrors the runner's strict parsing: unknown keys, missing/empty `cmd`, exit code and timeout validation, output check and `outputs.snapshot` shapes, `no tests defined`, file-level `setup`/`teardown`/`shared` and per-test `matrix` validation
 - Context-aware completions for test keys, whole-test snippets, and `{inputs.X}` / `{outputs.X}` placeholders (suggesting the files declared in the current test)
 - Hover documentation for test fields
 
@@ -61,10 +61,9 @@ validation, and can be wired into a YAML language server manually. When the runn
 schema changes, re-copy it here; it must stay byte-identical to the runner's master copy.
 
 Current copy: synced from
-[wow-look-at-my/dats@0a267b6](https://github.com/wow-look-at-my/dats/commit/0a267b6ee275d2a967c4b26321c47196ff2ed30d)
-(adds file-level `setup`/`teardown`, `shared` fixtures with `{shared.X}` placeholders, and
-per-test `matrix` with `{matrix.X}` substitution, merged as
-[dats#22](https://github.com/wow-look-at-my/dats/pull/22)).
+[wow-look-at-my/dats@d76c889](https://github.com/wow-look-at-my/dats/commit/d76c88907078eeae0ce78a02f2bf84ca18cdc164)
+(adds `outputs.snapshot` golden-file assertions, blessed with the runner's `--update` flag,
+merged as [dats#24](https://github.com/wow-look-at-my/dats/pull/24)).
 
 ## Links
 

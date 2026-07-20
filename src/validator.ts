@@ -16,6 +16,13 @@ const MATRIX_PLACEHOLDER_PATTERN = /\{matrix\.([^}]*)\}/g;
 const MATRIX_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 // A bare or quoted integer: accepted for exit (0-255) and timeout (seconds).
 const INTEGER_PATTERN = /^[-+]?[0-9]+$/;
+// The CLI's YAML library decodes these YAML 1.1-era strings into a Go bool
+// when the target is a typed bool, quoted or unquoted, so the CLI accepts
+// them wherever it expects a boolean. "true"/"false" spelled as STRINGS
+// (quoted) are not in the list: they resolve to plain strings, which the
+// CLI rejects.
+const YAML11_TRUE_STRINGS = new Set(['y', 'Y', 'yes', 'Yes', 'YES', 'on', 'On', 'ON']);
+const YAML11_FALSE_STRINGS = new Set(['n', 'N', 'no', 'No', 'NO', 'off', 'Off', 'OFF']);
 // Number scalars written in float form ("1.5", "2.0", "1e3"). yaml resolves
 // "2.0" to the integer 2, so the source text is checked, not just the value.
 const FLOAT_SOURCE_PATTERN = /\.|^[-+]?[0-9]+[eE]/;
@@ -46,6 +53,19 @@ function isLocalRelativePath(name: string): boolean {
 
 function isNullScalar(node: unknown): boolean {
     return node instanceof Scalar && node.value === null;
+}
+
+// The boolean a scalar decodes to when the CLI decodes it into a Go bool:
+// real booleans as themselves, null as false, and the YAML 1.1 compat
+// strings above. undefined = does not decode into a bool.
+function scalarBoolValue(node: Scalar): boolean | undefined {
+    if (typeof node.value === 'boolean') return node.value;
+    if (node.value === null) return false;
+    if (typeof node.value === 'string') {
+        if (YAML11_TRUE_STRINGS.has(node.value)) return true;
+        if (YAML11_FALSE_STRINGS.has(node.value)) return false;
+    }
+    return undefined;
 }
 
 // Mirrors the CLI's findMatrixPlaceholder: the name of the first {matrix.X}
@@ -590,7 +610,7 @@ function validateFixtureNames(filesMap: YAMLMap, kind: 'input' | 'output' | 'sha
 }
 
 function validateOutputs(outputs: YAMLMap, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
-    const validKeys = new Set(['stdout', 'stderr', '!stdout', '!stderr', 'files', '!files', 'json_output']);
+    const validKeys = new Set(['stdout', 'stderr', '!stdout', '!stderr', 'files', '!files', 'snapshot', 'json_output']);
     const outputCheckKeys = new Set(['stdout', 'stderr', '!stdout', '!stderr']);
 
     for (const item of outputs.items) {
@@ -618,6 +638,83 @@ function validateOutputs(outputs: YAMLMap, lineCounter: LineCounter, document: v
                 }
             }
         }
+
+        // Validate the snapshot (golden-file) assertion shape
+        if (keyStr === 'snapshot' && item.value) {
+            validateSnapshot(item.value, lineCounter, document, diagnostics);
+        }
+    }
+}
+
+// Mirrors the CLI's SnapshotCheck.UnmarshalYAML: a scalar boolean (true
+// snapshots stdout; false is the documented toggle-off, same as omitting the
+// key, and so is an explicit null) or a mapping of stream names (stdout,
+// stderr) to booleans, of which at least one must be true. An alias at the
+// snapshot key itself is left to the CLI (it resolves them; the walker
+// cannot); alias VALUES inside the mapping are flagged, because the CLI's
+// manual mapping walk rejects them the same way.
+function validateSnapshot(node: any, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
+    if (node instanceof Scalar) {
+        if (scalarBoolValue(node) === undefined) {
+            const range = nodeRange(node, lineCounter, document);
+            // Mirrors the CLI's parse error (a quoted "true" resolves to a
+            // string, which the CLI rejects; unquoted yes/on/etc. decode
+            // into booleans, which it accepts)
+            diagnostics.push(new vscode.Diagnostic(range, 'snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)', vscode.DiagnosticSeverity.Error));
+        }
+        return;
+    }
+
+    if (isMap(node)) {
+        const seen = new Set<string>();
+        let enabled = false;
+        let errored = false;
+        for (const pair of node.items) {
+            const key = pair.key;
+            if (!(key instanceof Scalar)) continue;
+            const keyStr = String(key.value);
+            if (keyStr !== 'stdout' && keyStr !== 'stderr') {
+                const range = nodeRange(key, lineCounter, document);
+                // Mirrors the CLI's parse error
+                diagnostics.push(new vscode.Diagnostic(range, `snapshot: unknown key "${keyStr}" (allowed: stdout, stderr)`, vscode.DiagnosticSeverity.Error));
+                errored = true;
+                continue;
+            }
+            if (seen.has(keyStr)) {
+                const range = nodeRange(key, lineCounter, document);
+                // Mirrors the CLI's parse error (the yaml parser reports the
+                // duplicate mapping key as its own diagnostic too)
+                diagnostics.push(new vscode.Diagnostic(range, `snapshot: ${keyStr} declared more than once`, vscode.DiagnosticSeverity.Error));
+                errored = true;
+                continue;
+            }
+            seen.add(keyStr);
+            const value = pair.value;
+            // A missing value (`stdout:`) decodes to false, like the CLI
+            const streamOn = value == null ? false : value instanceof Scalar ? scalarBoolValue(value) : undefined;
+            if (streamOn === undefined) {
+                const range = nodeRange(value ?? key, lineCounter, document);
+                // Mirrors the CLI's parse error
+                diagnostics.push(new vscode.Diagnostic(range, `snapshot: ${keyStr} must be a boolean`, vscode.DiagnosticSeverity.Error));
+                errored = true;
+                continue;
+            }
+            if (streamOn) enabled = true;
+        }
+        // The CLI reports its first error and stops, so its enables-nothing
+        // check is only reached when every entry was accepted
+        if (!errored && !enabled) {
+            const range = nodeRange(node, lineCounter, document);
+            // Mirrors the CLI's parse error (empty and all-false mappings)
+            diagnostics.push(new vscode.Diagnostic(range, 'snapshot: must enable at least one of stdout, stderr', vscode.DiagnosticSeverity.Error));
+        }
+        return;
+    }
+
+    if (isSeq(node)) {
+        const range = nodeRange(node, lineCounter, document);
+        // Mirrors the CLI's parse error
+        diagnostics.push(new vscode.Diagnostic(range, 'snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)', vscode.DiagnosticSeverity.Error));
     }
 }
 

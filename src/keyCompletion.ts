@@ -63,6 +63,7 @@ const OUTPUT_KEYS: KeyDef[] = [
     { key: '!stderr', description: 'Literal substrings that must NOT appear in stderr (list) or 0-indexed line number to regex (map)', insertText: '"!stderr":\n  - ' },
     { key: 'files', description: 'Output files to validate', insertText: 'files:\n  ' },
     { key: '!files', description: 'Negated output file assertions (each check inverted)', insertText: '"!files":\n  ' },
+    { key: 'snapshot', description: 'Golden-file assertion: true (snapshot stdout) or map of stream booleans (stdout/stderr, at least one true); dats --update rewrites the goldens' },
     { key: 'json_output', description: 'Expected JSON value of the whole stdout (deep equality; object keys order-insensitive, arrays order-sensitive)' }
 ];
 

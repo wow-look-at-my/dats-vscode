@@ -201,6 +201,39 @@
             "$ref": "#/definitions/fileCheck"
           }
         },
+        "snapshot": {
+          "description": "Golden-file (snapshot) assertion: captured output must byte-match a stored golden file. Goldens live in a .snapshots directory next to the .dats file (<file>.snapshots/NNN-<slug>.<stream>.golden, named by the canonical 1-based instance number and the slugged instance name, matrix label included). Comparison is byte-exact after normalization: framework temp paths are replaced with the stable tokens {testdir}, {shareddir}, and {tmproot} so goldens are reproducible across runs. A missing or differing golden fails the test; running with --update rewrites goldens from actual output (and prunes stale ones) instead.",
+          "oneOf": [
+            {
+              "type": "boolean",
+              "description": "true snapshots stdout; false is the documented toggle-off, identical to omitting the key"
+            },
+            {
+              "type": "object",
+              "description": "Per-stream form: which output streams to snapshot (each stream gets its own golden file). At least one stream must be enabled -- a mapping that enables neither is rejected at parse time.",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "stdout": {
+                  "type": "boolean",
+                  "description": "Snapshot the captured stdout against the instance's .stdout.golden file"
+                },
+                "stderr": {
+                  "type": "boolean",
+                  "description": "Snapshot the captured stderr against the instance's .stderr.golden file"
+                }
+              },
+              "anyOf": [
+                {
+                  "required": ["stdout"]
+                },
+                {
+                  "required": ["stderr"]
+                }
+              ]
+            }
+          ]
+        },
         "json_output": {
           "description": "Expected JSON value of the whole stdout. Stdout must parse as a single JSON value that deep-equals this value: object keys are order-insensitive, array elements are order-sensitive, numbers compare by value (2 == 2.0). Any JSON value is allowed here, including null (which asserts stdout is exactly the JSON null)."
         }
