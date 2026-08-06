@@ -85,6 +85,27 @@ describe('normalizeDats', () => {
         });
     });
 
+    it('is not derailed by a comment at another depth', () => {
+        expect(
+            structure(
+                'tests:\n' +
+                    '\t- cmd: echo hi\n' +
+                    '\t  outputs:\n' +
+                    '# a comment at the left margin, inside the outputs block\n' +
+                    '\t\tstdout:\n' +
+                    '\t\t\t- hi\n'
+            )
+        ).toEqual({ tests: [{ cmd: 'echo hi', outputs: { stdout: ['hi'] } }] });
+    });
+
+    it('keeps a "#" line inside a block scalar as body text', () => {
+        expect(
+            structure('tests:\n\t- cmd: bash {inputs.s.sh}\n\t  inputs:\n\t\tfiles:\n\t\t\ts.sh: |\n\t\t\t\t# not a comment\n\t\t\t\techo hi\n')
+        ).toEqual({
+            tests: [{ cmd: 'bash {inputs.s.sh}', inputs: { files: { 's.sh': '# not a comment\necho hi\n' } } }],
+        });
+    });
+
     it('maps columns back to the source line', () => {
         const dats = 'tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\t!stdout:\n\t\t\t- boom\n';
         const source = normalizeDats(dats);

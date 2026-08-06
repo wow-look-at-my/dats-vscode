@@ -51,6 +51,11 @@ the content starts.
 - **Block scalar bodies are reindented like everything else.** Their leading whitespace
   shifts by the same rule, so a `|` body's content is not byte-identical to the source.
   Nothing in the validator inspects that whitespace.
+- **Only a `!` starting a KEY is quoted, not one starting a value.** `cmd: ! grep foo` is a
+  plain string to the runner; the `yaml` parser reads the `!` as a tag and hands the
+  validator `grep foo`. That is silent and harmless (no diagnostic either way) except for
+  a value that is nothing but `!`, which arrives as null. Quoting values would mean
+  deciding where a trailing `# comment` ends, which is not worth it for that.
 - **It does not flag space indentation.** The runner rejects a space-indented file; the
   extension parses it as ordinary YAML and reports whatever it finds there. That gap is
   intentional (existing space-indented files still validate as before), not an oversight.

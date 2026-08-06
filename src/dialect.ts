@@ -67,11 +67,18 @@ export function normalizeDats(text: string): DialectSource {
         }
 
         const isDash = content === '-' || content.startsWith('- ');
-        // Deeper levels belong to a block that just ended; this depth's own kind
-        // survives, since a non-dash line under a sequence is an item body.
-        kinds.length = Math.min(kinds.length, depth + 1);
-        if (isDash || kinds[depth] === undefined) {
-            kinds[depth] = isDash ? 'seq' : 'map';
+        // A comment line says nothing about structure and may sit at any depth,
+        // so it reads the state without touching it -- letting one at the left
+        // margin end the block it is written inside would misplace every line
+        // after it. It is still emitted by depth, since inside a block scalar it
+        // is body text rather than a comment.
+        if (!content.startsWith('#')) {
+            // Deeper levels belong to a block that just ended; this depth's own
+            // kind survives: a non-dash line under a sequence is an item body.
+            kinds.length = Math.min(kinds.length, depth + 1);
+            if (isDash || kinds[depth] === undefined) {
+                kinds[depth] = isDash ? 'seq' : 'map';
+            }
         }
 
         // Each level costs two columns, and a sequence level costs two more so
