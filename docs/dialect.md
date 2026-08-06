@@ -2,7 +2,7 @@
 
 `.dats` files are parsed by the runner with
 [yaml-fixed](https://github.com/wow-look-at-my/yaml-fixed), not a general-purpose YAML
-library. Three of its differences make a real file unparseable -- or, worse, silently
+library. Four of its differences make a real file unparseable -- or, worse, silently
 mis-parsed -- by the `yaml` package this extension is built on:
 
 - **Structural depth is a count of leading TABS.** Standard YAML rejects tabs as
@@ -17,6 +17,9 @@ mis-parsed -- by the `yaml` package this extension is built on:
 - **A plain value runs to the end of its line.** `cmd` holds shell text, so a colon in it
   is ordinary -- `cmd: echo '{"ok": true}'` is one string to the runner. Standard YAML
   re-reads the `": "` inside it and reports a nested mapping where the file has a command.
+- **...and only to the end of its line.** The block parser reads one line at a time, so a
+  flow collection or a quoted scalar that does not finish there is a parse error, where
+  standard YAML would happily continue it on the next line.
 
 `src/dialect.ts` (`normalizeDats`) rewrites a source file into the equivalent standard
 YAML before either the validator or the completion provider parses it.
@@ -31,7 +34,8 @@ One output line per input line, so line numbers never move. Per line:
    (`- ` included). A non-dash line at a sequence's own depth is that item's body and is
    emitted two columns in. An indented but empty line keeps its indentation: that is
    where the next key gets typed, and completion decides context by where the cursor is.
-3. Quote a bare `!key`, so the parser reads a key rather than a tag.
+3. Quote a key opening with an indicator (`!stdout`, `&a cmd`), so the parser reads the
+   whole thing as the key rather than as a tag or an anchor.
 4. Quote a value standard YAML would read as something other than the whole value: one
    holding a `": "` or ending in `:`, or opening with an indicator character (`!`, `&`,
    `*`, ...). A trailing `# comment` stays outside the quotes -- both parsers treat it as
