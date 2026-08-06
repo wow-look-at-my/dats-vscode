@@ -1,0 +1,1 @@
+{"tests": [{"cmd": "echo hi"}]}

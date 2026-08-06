@@ -16,9 +16,10 @@ export interface DialectSource {
     /** Standard-YAML text, same number of lines as the input. */
     text: string;
     /**
-     * The first flow collection left open at the end of its line, if any. The
-     * block parser reads one line at a time, so `stdout: [` continued on the
-     * next line is where the CLI stops -- the `yaml` package would accept it.
+     * The first value left open at the end of its line -- an unclosed flow
+     * collection or an unterminated quoted scalar -- if any. The block parser
+     * reads one line at a time, so `stdout: [` (or `cmd: "echo`) continued on
+     * the next line is where the CLI stops; the `yaml` package accepts both.
      */
     flowError?: DialectError;
     /** Maps a 0-based column in the normalized text back to the source column. */
@@ -36,8 +37,10 @@ interface Shift {
 
 const IDENTITY: (line: number, col: number) => number = (_line, col) => col;
 
-// A bare `!key` is a tag to the yaml parser; quoting it makes it the key it is.
-const BARE_BANG_KEY = /^![^\s:'"]*$/;
+// A key opening with an indicator character means something else to the yaml
+// parser -- a tag (dats' bare `!stdout`), an anchor, an alias -- where the
+// runner reads it as part of the key's text. Quoting it makes it the key it is.
+const INDICATOR_KEY = /^[!&*][^:'"]*$/;
 
 // A plain scalar standard YAML would not read as the whole value written here:
 // one holding a ": " or ending in ":" starts a nested mapping, and one opening
@@ -171,13 +174,13 @@ export function normalizeDats(text: string): DialectSource {
         } else {
             const holdsBlockScalar = rewriteContent(content, rewrite);
             if (holdsBlockScalar) blockScalarDepth = depth;
-            const open = unclosedFlowColumn(content);
-            if (open !== undefined && !flowError) {
+            const open = unclosedValue(content);
+            if (open && !flowError) {
                 flowError = {
                     line: out.length,
-                    col: sourceStart + open,
+                    col: sourceStart + open.column,
                     endCol: line.length,
-                    message: 'unexpected end of flow value',
+                    message: open.message,
                 };
             }
         }
@@ -245,10 +248,11 @@ class LineRewrite {
     }
 }
 
-// Where a flow collection opens on this line and is still open at the end of
-// it, or undefined. Only a value (or a sequence item) that STARTS with "[" or
-// "{" is a flow collection; a bracket inside shell text is not.
-function unclosedFlowColumn(content: string): number | undefined {
+// Where a value opens something on this line that it never closes -- a flow
+// collection or a quoted scalar -- or undefined. Only a value (or a sequence
+// item) that STARTS with the opening character counts; a bracket or an
+// apostrophe inside shell text is ordinary text.
+function unclosedValue(content: string): { column: number; message: string } | undefined {
     const mapping = splitMapping(content);
     let value = content;
     let column = 0;
@@ -261,7 +265,13 @@ function unclosedFlowColumn(content: string): number | undefined {
         column = dash[0].length;
         value = content.slice(dash[0].length);
     }
-    if (value === '' || (value[0] !== '[' && value[0] !== '{')) return undefined;
+    if (value === '') return undefined;
+    if (value[0] === "'" || value[0] === '"') {
+        return unterminatedQuote(value)
+            ? { column, message: `unterminated ${value[0] === "'" ? 'single' : 'double'}-quoted scalar` }
+            : undefined;
+    }
+    if (value[0] !== '[' && value[0] !== '{') return undefined;
 
     let depth = 0;
     let inSingle = false;
@@ -283,7 +293,20 @@ function unclosedFlowColumn(content: string): number | undefined {
             depth--;
         }
     }
-    return depth > 0 ? column : undefined;
+    return depth > 0 ? { column, message: 'unexpected end of flow value' } : undefined;
+}
+
+// Whether a quoted scalar starting at value[0] runs off the end of the line.
+function unterminatedQuote(value: string): boolean {
+    const quote = value[0];
+    for (let i = 1; i < value.length; i++) {
+        if (quote === '"' && value[i] === '\\') {
+            i++;
+            continue;
+        }
+        if (value[i] === quote) return false;
+    }
+    return true;
 }
 
 // Rewrites one structural line into standard YAML, reporting whether its value
@@ -311,7 +334,7 @@ function rewriteContent(content: string, rewrite: LineRewrite): boolean {
     }
 
     const { key, separator, value } = mapping;
-    if (BARE_BANG_KEY.test(key)) {
+    if (INDICATOR_KEY.test(key)) {
         rewrite.emit(`"${key}"`, key.length);
     } else {
         rewrite.keep(key);

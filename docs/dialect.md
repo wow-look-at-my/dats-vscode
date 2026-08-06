@@ -9,10 +9,11 @@ mis-parsed -- by the `yaml` package this extension is built on:
   indentation outright, so every line of a valid `.dats` file is a parse error
   (`Tabs are not allowed as indentation`). Spaces after the tabs are alignment and never
   change depth -- that is what lets a sequence item's sibling keys line up past its `- `.
-- **There are no tags, so `!` is an ordinary character.** The negated assertion keys are
-  written bare (`!stdout:`, `!stderr:`, `!files:`). Standard YAML reads that as a tag on
-  the following node, which is worse than an error: the key silently disappears and the
-  block under it becomes the value of its parent.
+- **There are no tags, anchors or aliases, so `!`, `&` and `*` are ordinary characters.**
+  The negated assertion keys are written bare (`!stdout:`, `!stderr:`, `!files:`), and a
+  key like `&a cmd` is a key named `&a cmd`. Standard YAML reads those as a tag or an
+  anchor, which is worse than an error: the marker silently disappears and the node it
+  decorates takes its place.
 - **A plain value runs to the end of its line.** `cmd` holds shell text, so a colon in it
   is ordinary -- `cmd: echo '{"ok": true}'` is one string to the runner. Standard YAML
   re-reads the `": "` inside it and reports a nested mapping where the file has a command.
@@ -78,10 +79,11 @@ tab after alignment spaces, is the CLI's first parse error and is reported as a
 diagnostic (once, like the CLI). The rewrite still runs afterwards, so a space-indented
 file gets its other diagnostics too -- read as ordinary YAML, which is what it is.
 
-### Flow collections
+### Values that run off the end of their line
 
-The block parser reads one line at a time, so a flow collection has to close on the line
-that opens it: `stdout: [` continued on the next line is `unexpected end of flow value`
-to the runner and a perfectly ordinary multi-line list to the `yaml` package. The rewrite
-reports it as `flowError`, and only for a value that STARTS with `[` or `{` -- a bracket
-inside shell text (`awk "{print $1}"`) is not a flow collection.
+The block parser reads one line at a time, so a value has to finish on the line that
+starts it. `stdout: [` with its items below is `unexpected end of flow value` to the
+runner and an ordinary multi-line list to the `yaml` package; `cmd: "echo` continued
+below is an `unterminated double-quoted scalar` and an ordinary multi-line string. The
+rewrite reports either as `flowError`, and only for a value that STARTS with the opening
+character -- a bracket or an apostrophe inside shell text (`awk "{print $1}"`) is text.
