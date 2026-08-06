@@ -34,7 +34,7 @@ CI (`.github/workflows/ci.yml`) runs the same package.json scripts in a single `
 - `src/keyCompletion.ts` - context-aware key and snippet completion via the yaml AST. Multi-line insert texts use indentation RELATIVE to the current line and are inserted as snippets (the editor prepends the line's indentation to continuation lines): one TAB per deeper level, two spaces to align across a `- `. A key typed on an aligned line (`inputs:`/`outputs:`) gets no continuation -- a tab may not follow alignment spaces
 - `src/hover.ts` - static `FIELD_DOCS`-keyed hover docs; the key-detection regexes accept the bare `!stdout` spelling and the quoted one
 - `syntaxes/dats.tmLanguage.json` - TextMate grammar: includes `source.yaml` and layers the cmd-line shell rules, placeholder scopes and the `#dialect` rules (tab-indented `- ` and bare `!key:`, which the built-in grammar scopes `invalid.illegal` and as a tag) via grammar-local `injections` (`L:source.dats`). The injection is REQUIRED: the built-in YAML grammar claims whole-document regions, so plain sibling top-level patterns would never match after line 1.
-- `testdata/samples/full.dats` - one file exercising every construct the CLI accepts (verified with `dats syntax`); a validator test asserts it produces no diagnostics, so drift from the runner fails the build
+- `testdata/corpus/` - one `.dats` file per behaviour worth pinning plus `verdicts.txt`, what the REAL CLI does with each (`just corpus` re-records it by shelling out to `dats syntax`). `src/corpus.test.ts` asserts the validator predicts every verdict, so drift from the runner fails the build
 - `schema.json` - bundled copy of the canonical dats schema. Loaded by no code at runtime; packaged for reference and future schema-driven validation.
 - `testdata/yaml-grammar/` - the built-in VS Code YAML grammar, vendored as a test fixture (not packaged); `src/grammar.test.ts` tokenizes samples against it to prove the injection reaches through the real yaml grammar
 
@@ -42,7 +42,7 @@ CI (`.github/workflows/ci.yml`) runs the same package.json scripts in a single `
 
 - vitest; unit tests mock `vscode` (no extension host or display needed)
 - `src/grammar.test.ts` uses vscode-textmate + vscode-oniguruma to tokenize samples with BOTH the dats grammar and the real built-in YAML grammar registered - any grammar change must keep it green
-- validator tests pin CLI-verified behaviors. If you change validator.ts, verify against the real CLI (`dats syntax` on a probe file), not intuition. A prebuilt binary is available from `https://dl.pazer.build/dats?os=linux&arch=amd64`.
+- validator tests pin CLI-verified behaviors. If you change validator.ts, verify against the real CLI (`dats syntax` on a probe file), not intuition, and add the probe to `testdata/corpus/` + `just corpus`. A prebuilt binary is available from `https://dl.pazer.build/dats?os=linux&arch=amd64`.
 - Write new test fixtures in the dialect (tabs, bare `!stdout`). The space-indented ones predate it and still pass, since a file with no tab indentation goes through `normalizeDats` untouched.
 
 ## Rules

@@ -1,6 +1,5 @@
-# Every construct the CLI accepts, in one file. `dats syntax` accepts this
-# verbatim -- src/validator.test.ts asserts the extension reports nothing on it,
-# so a validator that drifts from the runner fails the build.
+# Every construct the CLI accepts, in one file -- the corpus entry that proves
+# the validator stays quiet on a whole valid file, not just on small fragments.
 sandbox:
 	enabled: true
 	network: false

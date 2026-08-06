@@ -23,9 +23,6 @@ vi.mock('vscode', () => {
     return { Range, Diagnostic, DiagnosticSeverity };
 });
 
-import { readFileSync } from 'fs';
-import { join } from 'path';
-
 import { validateDatsDocument } from './validator';
 
 const ERROR = 0;
@@ -1147,12 +1144,3 @@ describe('outputs.files exists', () => {
     });
 });
 
-describe('the full-feature sample', () => {
-    // testdata/samples/full.dats exercises every construct the CLI accepts and
-    // is verified with `dats syntax` itself. Anything the validator invents,
-    // or any feature it has not caught up with, shows up right here.
-    it('reports nothing on a file the CLI accepts', () => {
-        const text = readFileSync(join(__dirname, '..', 'testdata', 'samples', 'full.dats'), 'utf8');
-        expect(validate(text)).toEqual([]);
-    });
-});
