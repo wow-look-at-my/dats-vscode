@@ -8,6 +8,7 @@
   "injections": {
     "L:source.dats": {
       "patterns": [
+        { "include": "#hook-command-line" },
         { "include": "#dialect" },
         { "include": "#cmd-line" },
         { "include": "#placeholders" }
@@ -31,6 +32,18 @@
             "1": { "name": "punctuation.definition.block.sequence.item.yaml" }
           }
         }
+      ]
+    },
+    "hook-command-line": {
+      "comment": "A bare sequence item at the first level is a setup/teardown command -- the only shell text outside a cmd: line. A test item is a mapping (- cmd: ...), which the lookahead skips, and a pattern list sits deeper than one tab.",
+      "begin": "^\\t(-)[ \\t]+(?![^\\s:]+:)(?!-)([a-zA-Z0-9_./+-]+)?",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.block.sequence.item.yaml" },
+        "2": { "name": "entity.name.function.shell" }
+      },
+      "end": "$",
+      "patterns": [
+        { "include": "#shell-command" }
       ]
     },
     "cmd-line": {
