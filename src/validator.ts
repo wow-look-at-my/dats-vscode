@@ -352,12 +352,13 @@ function validateSandbox(node: any, lineCounter: LineCounter, document: vscode.T
     // absent key
     if (node === null || isNullScalar(node)) return;
 
-    const shapeError = 'sandbox: must be true, false, or a mapping (enabled, network, image)';
     if (!isMap(node)) {
         if (node instanceof Scalar && scalarBoolValue(node) !== undefined) return;
         const range = nodeRange(node, lineCounter, document);
         // Mirrors the CLI's parse error
-        diagnostics.push(new vscode.Diagnostic(range, shapeError, vscode.DiagnosticSeverity.Error));
+        diagnostics.push(
+            new vscode.Diagnostic(range, 'sandbox: must be true, false, or a mapping (enabled, network, image)', vscode.DiagnosticSeverity.Error)
+        );
         return;
     }
 
