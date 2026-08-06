@@ -13,6 +13,8 @@ function structure(dats: string): unknown {
 
 describe('normalizeDats', () => {
     it('leaves a file without tab indentation alone', () => {
+        // space-indented on purpose: the CLI rejects such a file, and this pass
+        // cannot place its lines, so it hands them to yaml as written
         const text = 'tests:\n  - cmd: echo hi\n';
         const source = normalizeDats(text);
         expect(source.text).toBe(text);

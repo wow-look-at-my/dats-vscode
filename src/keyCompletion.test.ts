@@ -104,8 +104,9 @@ function insertAtIndent(expanded: string, pad: string): string {
 
 describe('context-aware key completion', () => {
     it('offers test keys (including timeout) at test level, minus existing ones', () => {
-        const text = 'tests:\n  - cmd: echo hi\n    \n';
-        const items = complete(text, 2, 4)!;
+        // the cursor sits on a fresh line aligned under the item's keys
+        const text = 'tests:\n\t- cmd: echo hi\n\t  \n';
+        const items = complete(text, 2, 3)!;
         const labels = items.map(i => i.label);
         expect(labels).toContain('timeout');
         expect(labels).toContain('desc');
@@ -116,8 +117,8 @@ describe('context-aware key completion', () => {
     });
 
     it('offers output keys (including json_output and snapshot) inside outputs', () => {
-        const text = 'tests:\n  - cmd: echo hi\n    outputs:\n      stdout:\n        - "x"\n';
-        const items = complete(text, 3, 6)!;
+        const text = 'tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tstdout:\n\t\t\t- "x"\n';
+        const items = complete(text, 3, 2)!;
         const labels = items.map(i => i.label);
         expect(labels).toContain('json_output');
         expect(labels).toContain('snapshot');
@@ -130,7 +131,7 @@ describe('context-aware key completion', () => {
     });
 
     it('returns nothing mid-value', () => {
-        const text = 'tests:\n  - cmd: echo hi\n';
+        const text = 'tests:\n\t- cmd: echo hi\n';
         expect(complete(text, 1, 15)).toBeUndefined();
     });
 
@@ -152,29 +153,29 @@ describe('context-aware key completion', () => {
 describe('completion replace range', () => {
     it('covers a typed "!" so accepting "!stdout" does not double it', () => {
         // mid-typing document: the user typed "!st" on a new line inside outputs
-        const text = 'tests:\n  - cmd: echo hi\n    outputs:\n      stdout:\n        - "x"\n      !st\n';
-        const items = complete(text, 5, 9)!;
+        const text = 'tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tstdout:\n\t\t\t- "x"\n\t\t!st\n';
+        const items = complete(text, 5, 5)!;
         const negated = items.find(i => i.label === '!stdout')!;
         expect(negated.range).toBeDefined();
         expect(rangeOf(negated).start.line).toBe(5);
-        expect(rangeOf(negated).start.character).toBe(6); // start of "!st", including the "!"
-        expect(rangeOf(negated).end.character).toBe(9);
+        expect(rangeOf(negated).start.character).toBe(2); // start of "!st", including the "!"
+        expect(rangeOf(negated).end.character).toBe(5);
     });
 
     it('covers a plain typed prefix', () => {
-        const text = 'tests:\n  - cmd: echo hi\n    time\n';
-        const items = complete(text, 2, 8)!;
+        const text = 'tests:\n\t- cmd: echo hi\n\t  time\n';
+        const items = complete(text, 2, 7)!;
         const timeout = items.find(i => i.label === 'timeout')!;
-        expect(rangeOf(timeout).start.character).toBe(4);
-        expect(rangeOf(timeout).end.character).toBe(8);
+        expect(rangeOf(timeout).start.character).toBe(3);
+        expect(rangeOf(timeout).end.character).toBe(7);
     });
 
     it('is empty when nothing was typed yet', () => {
-        const text = 'tests:\n  - cmd: echo hi\n    \n';
-        const items = complete(text, 2, 4)!;
+        const text = 'tests:\n\t- cmd: echo hi\n\t  \n';
+        const items = complete(text, 2, 3)!;
         const desc = items.find(i => i.label === 'desc')!;
-        expect(rangeOf(desc).start.character).toBe(4);
-        expect(rangeOf(desc).end.character).toBe(4);
+        expect(rangeOf(desc).start.character).toBe(3);
+        expect(rangeOf(desc).end.character).toBe(3);
     });
 });
 

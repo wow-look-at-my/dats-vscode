@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { parseDocument, isMap, isSeq, Scalar, YAMLMap, LineCounter } from 'yaml';
-import { normalizeDats, DialectSource } from './dialect';
+import { normalizeDats, firstIndentationError, DialectSource } from './dialect';
 
 // The dats runner resolves only these two exit code names; any other EXIT_*
 // string is rejected at parse time.
@@ -87,6 +87,16 @@ export function validateDatsDocument(document: vscode.TextDocument): vscode.Diag
     const diagnostics: vscode.Diagnostic[] = [];
     const text = document.getText();
     const parseCounter = new LineCounter();
+
+    // Indentation is the dialect's own rule and the CLI's first gate: a
+    // space-indented file parses as ordinary YAML, so nothing below would ever
+    // notice that the runner refuses to run it.
+    const indentation = firstIndentationError(text);
+    if (indentation) {
+        const range = new vscode.Range(indentation.line, indentation.col, indentation.line, indentation.endCol);
+        // Mirrors the CLI's parse error
+        diagnostics.push(new vscode.Diagnostic(range, indentation.message, vscode.DiagnosticSeverity.Error));
+    }
 
     // yaml parses standard YAML, so the tab indentation and bare "!stdout:"
     // keys of the dialect have to be rewritten first; every position the parser

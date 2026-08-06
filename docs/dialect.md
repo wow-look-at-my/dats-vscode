@@ -65,6 +65,11 @@ the content starts.
   at each end of an inserted quote pair; a doubled `'` inside the value is not tracked
   individually, so a range in the middle of such a value can drift by the number of
   quotes before it. The diagnostic still lands on the right line and value.
-- **It does not flag space indentation.** The runner rejects a space-indented file; the
-  extension parses it as ordinary YAML and reports whatever it finds there. That gap is
-  intentional (existing space-indented files still validate as before), not an oversight.
+
+## Indentation itself
+
+Indentation is checked before any of this, by `firstIndentationError`, which
+mirrors yaml-fixed's `measure`: leading spaces with no tab, or a tab after alignment
+spaces, is the CLI's first parse error and is reported as a diagnostic (once, like the
+CLI). The rewrite still runs afterwards, so a space-indented file gets its other
+diagnostics too -- read as ordinary YAML, which is what it is.

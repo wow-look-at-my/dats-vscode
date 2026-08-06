@@ -10,7 +10,7 @@ DATS is a declarative YAML format for defining command-line tests, executed nati
 - Inline diagnostics from a built-in validator that mirrors the runner's strict parsing: unknown keys, missing/empty `cmd`, exit code and timeout validation, output check and `outputs.snapshot` shapes, `no tests defined`, the file-level `setup` / `teardown` / `shared` / `sandbox` blocks, `copy` fixtures, and per-test `matrix` validation
 - Context-aware completions for file-level and test keys, whole-test snippets, and `{inputs.X}` / `{outputs.X}` / `{shared.X}` placeholders (suggesting the fixtures the file actually declares)
 - Hover documentation for test fields
-- Understands the runner's YAML dialect: tab indentation (and defaults the editor to inserting tabs in `.dats` files) and bare `!stdout` / `!stderr` / `!files` keys
+- Understands the runner's YAML dialect: tab indentation (flagged when a file uses spaces, and the editor defaults to inserting tabs in `.dats` files) and bare `!stdout` / `!stderr` / `!files` keys
 
 ## Example
 

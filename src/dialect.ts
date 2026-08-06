@@ -47,6 +47,45 @@ const VALUE_DASH = /^-(\s|$)/;
 // optional comment): its body lines are content, not structure.
 const BLOCK_SCALAR_HEADER = /^[|>][-+0-9]*\s*(#.*)?$/;
 
+/** Where a line breaks the dialect's indentation rule, and what to say about it. */
+export interface IndentationError {
+    line: number;
+    col: number;
+    endCol: number;
+    message: string;
+}
+
+// Mirrors yaml-fixed's `measure`, which the CLI applies to every line -- comment
+// lines included -- and fails on the first offender: depth is leading TABS, and
+// spaces may only ALIGN after them. A line that is nothing but whitespace has no
+// indentation to judge. Reports the first error only, like the CLI.
+export function firstIndentationError(text: string): IndentationError | undefined {
+    const lines = text.split(/\r?\n/);
+    for (let line = 0; line < lines.length; line++) {
+        const indent = /^(\t*)( *)/.exec(lines[line])!;
+        const tabs = indent[1].length;
+        const spaces = indent[2].length;
+        if (lines[line].slice(tabs).trim() === '') continue;
+        if (tabs === 0 && spaces > 0) {
+            return {
+                line,
+                col: 0,
+                endCol: spaces,
+                message: 'spaces cannot be used for indentation; indent with tabs (spaces only align after a tab)',
+            };
+        }
+        if (spaces > 0 && lines[line][tabs + spaces] === '\t') {
+            return {
+                line,
+                col: tabs + spaces,
+                endCol: tabs + spaces + 1,
+                message: 'tab after spaces; indent with tabs first, then align with spaces',
+            };
+        }
+    }
+    return undefined;
+}
+
 export function normalizeDats(text: string): DialectSource {
     // A file with no tab indentation is not in the dialect (the CLI rejects it),
     // so leave it exactly as written rather than guessing at its structure.

@@ -33,47 +33,47 @@ function validate(text: string) {
 
 describe('validateDatsDocument', () => {
     it('accepts a minimal valid test', () => {
-        expect(validate('tests:\n  - cmd: echo hi\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n')).toEqual([]);
     });
 
     it('accepts a fully featured valid file', () => {
         const yaml = [
             'tests:',
-            '  - desc: everything',
-            '    exit: EXIT_SUCCESS',
-            '    timeout: 500ms',
-            '    cmd: cp {inputs.data.txt} {outputs.copy.txt}',
-            '    inputs:',
-            '      stdin: "hello"',
-            '      files:',
-            '        data.txt: |',
-            '          content',
-            '    outputs:',
-            '      stdout:',
-            '        - "copied"',
-            '      stderr:',
-            '        0: "^warning"',
-            '      "!stdout":',
-            '        - "error"',
-            '      files:',
-            '        copy.txt:',
-            '          exists: true',
-            '          match:',
-            '            - "content"',
-            '          notMatch:',
-            '            - "garbage"',
-            '      "!files":',
-            '        unexpected.txt:',
-            '          exists: true',
-            '      snapshot: true',
-            '      json_output: null',
+            '\t- desc: everything',
+            '\t  exit: EXIT_SUCCESS',
+            '\t  timeout: 500ms',
+            '\t  cmd: cp {inputs.data.txt} {outputs.copy.txt}',
+            '\t  inputs:',
+            '\t\tstdin: "hello"',
+            '\t\tfiles:',
+            '\t\t\tdata.txt: |',
+            '\t\t\t\tcontent',
+            '\t  outputs:',
+            '\t\tstdout:',
+            '\t\t\t- "copied"',
+            '\t\tstderr:',
+            '\t\t\t0: "^warning"',
+            '\t\t"!stdout":',
+            '\t\t\t- "error"',
+            '\t\tfiles:',
+            '\t\t\tcopy.txt:',
+            '\t\t\t\texists: true',
+            '\t\t\t\tmatch:',
+            '\t\t\t\t\t- "content"',
+            '\t\t\t\tnotMatch:',
+            '\t\t\t\t\t- "garbage"',
+            '\t\t"!files":',
+            '\t\t\tunexpected.txt:',
+            '\t\t\t\texists: true',
+            '\t\tsnapshot: true',
+            '\t\tjson_output: null',
             '',
         ].join('\n');
         expect(validate(yaml)).toEqual([]);
     });
 
     it('reports YAML parse errors as diagnostics', () => {
-        const diags = validate('tests:\n  - cmd: [unclosed\n');
+        const diags = validate('tests:\n\t- cmd: [unclosed\n');
         expect(diags.length).toBeGreaterThan(0);
         expect(diags[0].severity).toBe(ERROR);
     });
@@ -120,21 +120,21 @@ describe('tests array', () => {
 
 describe('cmd', () => {
     it('flags a test missing cmd', () => {
-        const diags = validate('tests:\n  - desc: no command\n');
+        const diags = validate('tests:\n\t- desc: no command\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toContain('required property "cmd"');
         expect(diags[0].severity).toBe(ERROR);
     });
 
     it('flags a null cmd', () => {
-        const diags = validate('tests:\n  - cmd:\n');
+        const diags = validate('tests:\n\t- cmd:\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('"cmd" must be a non-empty string');
         expect(diags[0].severity).toBe(ERROR);
     });
 
     it('flags an empty string cmd', () => {
-        const diags = validate('tests:\n  - cmd: ""\n');
+        const diags = validate('tests:\n\t- cmd: ""\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('"cmd" must be a non-empty string');
     });
@@ -142,21 +142,21 @@ describe('cmd', () => {
 
 describe('exit', () => {
     it('accepts integer exit codes and the two exit code names', () => {
-        expect(validate('tests:\n  - cmd: echo hi\n    exit: 0\n')).toEqual([]);
-        expect(validate('tests:\n  - cmd: echo hi\n    exit: 255\n')).toEqual([]);
-        expect(validate('tests:\n  - cmd: echo hi\n    exit: EXIT_SUCCESS\n')).toEqual([]);
-        expect(validate('tests:\n  - cmd: echo hi\n    exit: EXIT_FAILURE\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  exit: 0\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  exit: 255\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  exit: EXIT_SUCCESS\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  exit: EXIT_FAILURE\n')).toEqual([]);
     });
 
     it('accepts quoted integer exit codes', () => {
-        expect(validate('tests:\n  - cmd: echo hi\n    exit: "3"\n')).toEqual([]);
-        expect(validate('tests:\n  - cmd: echo hi\n    exit: "0"\n')).toEqual([]);
-        expect(validate('tests:\n  - cmd: echo hi\n    exit: "255"\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  exit: "3"\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  exit: "0"\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  exit: "255"\n')).toEqual([]);
     });
 
     it('flags out-of-range exit codes, bare or quoted', () => {
         for (const exit of ['-1', '256', '"256"', '"-1"']) {
-            const diags = validate(`tests:\n  - cmd: echo hi\n    exit: ${exit}\n`);
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  exit: ${exit}\n`);
             expect(diags).toHaveLength(1);
             expect(diags[0].message).toBe(`exit code ${exit.replace(/"/g, '')} must be in range 0-255`);
             expect(diags[0].severity).toBe(ERROR);
@@ -165,7 +165,7 @@ describe('exit', () => {
 
     it('flags float exit codes, including integral ones like 2.0', () => {
         for (const exit of ['1.5', '2.0']) {
-            const diags = validate(`tests:\n  - cmd: echo hi\n    exit: ${exit}\n`);
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  exit: ${exit}\n`);
             expect(diags).toHaveLength(1);
             expect(diags[0].message).toBe(`exit code must be an integer in range 0-255, got float ${exit}`);
             expect(diags[0].severity).toBe(ERROR);
@@ -173,7 +173,7 @@ describe('exit', () => {
     });
 
     it('flags quoted float exit codes as unrecognized names (like the CLI)', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    exit: "1.5"\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  exit: "1.5"\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe(
             'exit "1.5" is not a recognized exit code name (use EXIT_SUCCESS, EXIT_FAILURE, or an integer 0-255)'
@@ -182,7 +182,7 @@ describe('exit', () => {
 
     it('flags unrecognized exit code names, including other EXIT_* strings', () => {
         for (const exit of ['EXIT_BANANA', 'banana']) {
-            const diags = validate(`tests:\n  - cmd: echo hi\n    exit: ${exit}\n`);
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  exit: ${exit}\n`);
             expect(diags).toHaveLength(1);
             expect(diags[0].message).toBe(
                 `exit "${exit}" is not a recognized exit code name (use EXIT_SUCCESS, EXIT_FAILURE, or an integer 0-255)`
@@ -194,28 +194,28 @@ describe('exit', () => {
 
 describe('unknown keys are hard errors (the CLI refuses to run unknown fields)', () => {
     it('flags unknown test keys', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    retries: 3\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  retries: 3\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('Unknown property "retries" (dats will refuse to run this file)');
         expect(diags[0].severity).toBe(ERROR);
     });
 
     it('flags unknown top-level keys', () => {
-        const diags = validate('version: 2\ntests:\n  - cmd: echo hi\n');
+        const diags = validate('version: 2\ntests:\n\t- cmd: echo hi\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toContain('Unknown property "version"');
         expect(diags[0].severity).toBe(ERROR);
     });
 
     it('flags unknown inputs keys', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    inputs:\n      environment: FOO=1\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  inputs:\n\t\tenvironment: FOO=1\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toContain('Unknown inputs property "environment"');
         expect(diags[0].severity).toBe(ERROR);
     });
 
     it('flags unknown outputs keys', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      bogus: ["x"]\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tbogus: ["x"]\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toContain('Unknown outputs property "bogus"');
         expect(diags[0].severity).toBe(ERROR);
@@ -224,11 +224,11 @@ describe('unknown keys are hard errors (the CLI refuses to run unknown fields)',
     it('flags unknown file check keys', () => {
         const yaml = [
             'tests:',
-            '  - cmd: echo hi',
-            '    outputs:',
-            '      files:',
-            '        out.txt:',
-            '          contains: ["x"]',
+            '\t- cmd: echo hi',
+            '\t  outputs:',
+            '\t\tfiles:',
+            '\t\t\tout.txt:',
+            '\t\t\t\tcontains: ["x"]',
             '',
         ].join('\n');
         const diags = validate(yaml);
@@ -241,7 +241,7 @@ describe('unknown keys are hard errors (the CLI refuses to run unknown fields)',
 describe('output check shape', () => {
     for (const key of ['stdout', 'stderr', '"!stdout"', '"!stderr"']) {
         it(`flags a scalar ${key} value`, () => {
-            const diags = validate(`tests:\n  - cmd: echo hi\n    outputs:\n      ${key}: "hello"\n`);
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\t${key}: "hello"\n`);
             expect(diags).toHaveLength(1);
             expect(diags[0].message).toBe('output check must be a list of patterns or map of line checks');
             expect(diags[0].severity).toBe(ERROR);
@@ -249,52 +249,52 @@ describe('output check shape', () => {
     }
 
     it('accepts a null output check (no checks)', () => {
-        expect(validate('tests:\n  - cmd: echo hi\n    outputs:\n      stdout:\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tstdout:\n')).toEqual([]);
     });
 
     it('accepts list and map forms', () => {
         const yaml = [
             'tests:',
-            '  - cmd: echo hi',
-            '    outputs:',
-            '      stdout:',
-            '        - "hello"',
-            '      stderr:',
-            '        0: "^warn"',
-            '        3: "done$"',
-            '        "7": "quoted keys work too"',
+            '\t- cmd: echo hi',
+            '\t  outputs:',
+            '\t\tstdout:',
+            '\t\t\t- "hello"',
+            '\t\tstderr:',
+            '\t\t\t0: "^warn"',
+            '\t\t\t3: "done$"',
+            '\t\t\t"7": "quoted keys work too"',
             '',
         ].join('\n');
         expect(validate(yaml)).toEqual([]);
     });
 
     it('flags non-integer line check keys', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      stdout:\n        foo: "^x$"\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tstdout:\n\t\t\tfoo: "^x$"\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('line check key must be an integer, got "foo"');
     });
 
     it('flags negative line check keys', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      stdout:\n        -1: "^x$"\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tstdout:\n\t\t\t-1: "^x$"\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('line number must be >= 0, got -1');
     });
 
     it('flags duplicate line check keys (bare 0 and quoted "0" collide)', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      stdout:\n        0: "^a$"\n        "0": "^b$"\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tstdout:\n\t\t\t0: "^a$"\n\t\t\t"0": "^b$"\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('duplicate line number 0 in output check');
         expect(diags[0].severity).toBe(ERROR);
     });
 
     it('flags non-string line check values', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      stdout:\n        0: 5\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tstdout:\n\t\t\t0: 5\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('Line check values must be regex strings');
     });
 
     it('flags non-string patterns in the list form', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      stdout:\n        - 5\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tstdout:\n\t\t\t- 5\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('Output check patterns must be strings');
     });
@@ -302,24 +302,24 @@ describe('output check shape', () => {
 
 describe('timeout', () => {
     it('accepts integer second timeouts', () => {
-        expect(validate('tests:\n  - cmd: echo hi\n    timeout: 5\n')).toEqual([]);
-        expect(validate('tests:\n  - cmd: echo hi\n    timeout: 0\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  timeout: 5\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  timeout: 0\n')).toEqual([]);
     });
 
     it('accepts Go duration string timeouts, including both micro signs', () => {
         for (const duration of ['500ms', '2s', '1m30s', '1.5h', '.5s', '0', '100us', '100µs', '100μs']) {
-            expect(validate(`tests:\n  - cmd: echo hi\n    timeout: "${duration}"\n`)).toEqual([]);
+            expect(validate(`tests:\n\t- cmd: echo hi\n\t  timeout: "${duration}"\n`)).toEqual([]);
         }
     });
 
     it('accepts quoted bare integer timeouts as seconds', () => {
-        expect(validate('tests:\n  - cmd: echo hi\n    timeout: "5"\n')).toEqual([]);
-        expect(validate('tests:\n  - cmd: echo hi\n    timeout: "0"\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  timeout: "5"\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  timeout: "0"\n')).toEqual([]);
     });
 
     it('flags negative integer timeouts, bare or quoted', () => {
         for (const timeout of ['-1', '"-1"']) {
-            const diags = validate(`tests:\n  - cmd: echo hi\n    timeout: ${timeout}\n`);
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  timeout: ${timeout}\n`);
             expect(diags).toHaveLength(1);
             expect(diags[0].message).toBe('timeout -1 must not be negative');
             expect(diags[0].severity).toBe(ERROR);
@@ -328,7 +328,7 @@ describe('timeout', () => {
 
     it('flags float timeouts, including integral ones like 1.0', () => {
         for (const timeout of ['2.5', '1.0']) {
-            const diags = validate(`tests:\n  - cmd: echo hi\n    timeout: ${timeout}\n`);
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  timeout: ${timeout}\n`);
             expect(diags).toHaveLength(1);
             expect(diags[0].message).toBe(
                 `timeout must be an integer number of seconds or a duration string (e.g. "900ms", "1.5s"), got float ${timeout}`
@@ -339,7 +339,7 @@ describe('timeout', () => {
 
     it('flags invalid and negative duration strings', () => {
         for (const duration of ['banana', '-5s', '5 s', '1.5']) {
-            const diags = validate(`tests:\n  - cmd: echo hi\n    timeout: "${duration}"\n`);
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  timeout: "${duration}"\n`);
             expect(diags).toHaveLength(1);
             expect(diags[0].message).toContain(`Timeout "${duration}"`);
             expect(diags[0].severity).toBe(ERROR);
@@ -351,30 +351,30 @@ describe('inputs.env', () => {
     it('accepts env as a map of string values', () => {
         const yaml = [
             'tests:',
-            '  - cmd: echo $FOO $BAR',
-            '    inputs:',
-            '      env:',
-            '        FOO: bar',
-            '        DATA: "{inputs.data.txt}"',
-            '      files:',
-            '        data.txt: content',
+            '\t- cmd: echo $FOO $BAR',
+            '\t  inputs:',
+            '\t\tenv:',
+            '\t\t\tFOO: bar',
+            '\t\t\tDATA: "{inputs.data.txt}"',
+            '\t\tfiles:',
+            '\t\t\tdata.txt: content',
             '',
         ].join('\n');
         expect(validate(yaml)).toEqual([]);
     });
 
     it('accepts an empty env', () => {
-        expect(validate('tests:\n  - cmd: echo hi\n    inputs:\n      env:\n')).toEqual([]);
-        expect(validate('tests:\n  - cmd: echo hi\n    inputs:\n      env: {}\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  inputs:\n\t\tenv:\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  inputs:\n\t\tenv: {}\n')).toEqual([]);
     });
 
     it('accepts null env values (decode to the empty string)', () => {
-        expect(validate('tests:\n  - cmd: echo hi\n    inputs:\n      env:\n        FOO:\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  inputs:\n\t\tenv:\n\t\t\tFOO:\n')).toEqual([]);
     });
 
     it('flags a non-map env value', () => {
         for (const env of ['FOO=1', '["FOO"]']) {
-            const diags = validate(`tests:\n  - cmd: echo hi\n    inputs:\n      env: ${env}\n`);
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  inputs:\n\t\tenv: ${env}\n`);
             expect(diags).toHaveLength(1);
             expect(diags[0].message).toBe('"env" must be a map of environment variable names to string values');
             expect(diags[0].severity).toBe(ERROR);
@@ -383,7 +383,7 @@ describe('inputs.env', () => {
 
     it('flags non-string env values (lists, maps, numbers)', () => {
         for (const value of ['[1, 2]', '{a: b}', '5', 'true']) {
-            const diags = validate(`tests:\n  - cmd: echo hi\n    inputs:\n      env:\n        FOO: ${value}\n`);
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  inputs:\n\t\tenv:\n\t\t\tFOO: ${value}\n`);
             expect(diags).toHaveLength(1);
             expect(diags[0].message).toBe('env values must be strings');
             expect(diags[0].severity).toBe(ERROR);
@@ -395,15 +395,15 @@ describe('fixture file names must be local relative paths', () => {
     it('accepts nested relative names', () => {
         const yaml = [
             'tests:',
-            '  - cmd: cp {inputs.sub/in.txt} {outputs.deep/out.txt}',
-            '    inputs:',
-            '      files:',
-            '        sub/in.txt: content',
-            '    outputs:',
-            '      files:',
-            '        deep/out.txt:',
-            '      "!files":',
-            '        other/missing.txt:',
+            '\t- cmd: cp {inputs.sub/in.txt} {outputs.deep/out.txt}',
+            '\t  inputs:',
+            '\t\tfiles:',
+            '\t\t\tsub/in.txt: content',
+            '\t  outputs:',
+            '\t\tfiles:',
+            '\t\t\tdeep/out.txt:',
+            '\t\t"!files":',
+            '\t\t\tother/missing.txt:',
             '',
         ].join('\n');
         expect(validate(yaml)).toEqual([]);
@@ -411,7 +411,7 @@ describe('fixture file names must be local relative paths', () => {
 
     it('flags absolute and escaping input file names', () => {
         for (const name of ['/abs.txt', '../escape.txt', 'sub/../../up.txt']) {
-            const diags = validate(`tests:\n  - cmd: echo hi\n    inputs:\n      files:\n        ${name}: content\n`);
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  inputs:\n\t\tfiles:\n\t\t\t${name}: content\n`);
             expect(diags).toHaveLength(1);
             expect(diags[0].message).toBe(`input file name "${name}" must be a relative path that stays inside the test directory`);
             expect(diags[0].severity).toBe(ERROR);
@@ -421,7 +421,7 @@ describe('fixture file names must be local relative paths', () => {
     it('flags absolute and escaping output file names in files and !files', () => {
         for (const key of ['files', '"!files"']) {
             for (const name of ['/abs.txt', '../escape.txt']) {
-                const diags = validate(`tests:\n  - cmd: echo hi\n    outputs:\n      ${key}:\n        ${name}:\n`);
+                const diags = validate(`tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\t${key}:\n\t\t\t${name}:\n`);
                 expect(diags).toHaveLength(1);
                 expect(diags[0].message).toBe(`output file name "${name}" must be a relative path that stays inside the test directory`);
                 expect(diags[0].severity).toBe(ERROR);
@@ -434,14 +434,14 @@ describe('empty file checks are implicit existence assertions', () => {
     it('accepts null and {} file checks under files and !files', () => {
         const yaml = [
             'tests:',
-            '  - cmd: touch {outputs.a.txt}',
-            '    outputs:',
-            '      files:',
-            '        a.txt:',
-            '        b.txt: {}',
-            '      "!files":',
-            '        c.txt:',
-            '        d.txt: {}',
+            '\t- cmd: touch {outputs.a.txt}',
+            '\t  outputs:',
+            '\t\tfiles:',
+            '\t\t\ta.txt:',
+            '\t\t\tb.txt: {}',
+            '\t\t"!files":',
+            '\t\t\tc.txt:',
+            '\t\t\td.txt: {}',
             '',
         ].join('\n');
         expect(validate(yaml)).toEqual([]);
@@ -452,18 +452,18 @@ describe('json_output', () => {
     it('accepts json_output with an object value', () => {
         const yaml = [
             'tests:',
-            '  - cmd: echo \'{"a":1}\'',
-            '    outputs:',
-            '      json_output:',
-            '        a: 1',
+            '\t- cmd: echo \'{"a":1}\'',
+            '\t  outputs:',
+            '\t\tjson_output:',
+            '\t\t\ta: 1',
             '',
         ].join('\n');
         expect(validate(yaml)).toEqual([]);
     });
 
     it('accepts json_output with scalar and null values', () => {
-        expect(validate('tests:\n  - cmd: echo 2\n    outputs:\n      json_output: 2\n')).toEqual([]);
-        expect(validate('tests:\n  - cmd: echo null\n    outputs:\n      json_output: null\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo 2\n\t  outputs:\n\t\tjson_output: 2\n')).toEqual([]);
+        expect(validate('tests:\n\t- cmd: echo null\n\t  outputs:\n\t\tjson_output: null\n')).toEqual([]);
     });
 });
 
@@ -471,13 +471,13 @@ describe('negated output checks', () => {
     it('accepts dict-form !stdout and !stderr (line-keyed regexes)', () => {
         const yaml = [
             'tests:',
-            '  - cmd: echo hi',
-            '    outputs:',
-            '      "!stdout":',
-            '        0: "^error"',
-            '        3: "warning$"',
-            '      "!stderr":',
-            '        1: "fatal"',
+            '\t- cmd: echo hi',
+            '\t  outputs:',
+            '\t\t"!stdout":',
+            '\t\t\t0: "^error"',
+            '\t\t\t3: "warning$"',
+            '\t\t"!stderr":',
+            '\t\t\t1: "fatal"',
             '',
         ].join('\n');
         expect(validate(yaml)).toEqual([]);
@@ -486,10 +486,10 @@ describe('negated output checks', () => {
     it('accepts array-form !stdout and !stderr (literal substrings)', () => {
         const yaml = [
             'tests:',
-            '  - cmd: echo hi',
-            '    outputs:',
-            '      "!stdout": ["error"]',
-            '      "!stderr": ["fatal"]',
+            '\t- cmd: echo hi',
+            '\t  outputs:',
+            '\t\t"!stdout": ["error"]',
+            '\t\t"!stderr": ["fatal"]',
             '',
         ].join('\n');
         expect(validate(yaml)).toEqual([]);
@@ -500,71 +500,71 @@ describe('file-level setup/teardown/shared and $schema', () => {
     it('accepts the full new-format file the CLI accepts (probe p0-positive.dats)', () => {
         const yaml = [
             'shared:',
-            '  files:',
-            `    cfg.json: '{"a": 1}'`,
-            '    sub/cfg.json: nested content',
+            '\tfiles:',
+            `\t\tcfg.json: '{"a": 1}'`,
+            '\t\tsub/cfg.json: nested content',
             'setup:',
-            '  - echo setup1 {shared.cfg.json}',
-            '  - echo setup2',
+            '\t- echo setup1 {shared.cfg.json}',
+            '\t- echo setup2',
             'teardown:',
-            '  - echo teardown1',
-            '  - echo teardown2',
+            '\t- echo teardown1',
+            '\t- echo teardown2',
             'tests:',
-            '  - desc: matrix test {matrix.word}',
-            '    cmd: cat {inputs.in.txt} && echo {matrix.word} && cat {shared.cfg.json} && echo out > {outputs.result.txt}',
-            '    matrix:',
-            '      word: [hello, howdy]',
-            '      num: [1, 2]',
-            '    inputs:',
-            '      stdin: "stdin {matrix.word}"',
-            '      files:',
-            '        in.txt: "content {matrix.word}"',
-            '      env:',
-            '        MY_VAR: "val {matrix.num}"',
-            '    outputs:',
-            '      stdout:',
-            '        - "{matrix.word}"',
-            '      "!stdout":',
-            '        - "nope {matrix.num}"',
-            '      files:',
-            '        result.txt:',
-            '          match:',
-            '            - out',
-            '  - desc: json matrix',
-            '    cmd: echo hi',
-            '    matrix:',
-            '      v: [a]',
-            '    outputs:',
-            '      json_output:',
-            '        k: "{matrix.v}"',
-            '  - desc: null matrix test',
-            '    cmd: echo hi',
-            '    matrix: null',
-            '    outputs:',
-            '      stdout:',
-            '        - hi',
+            '\t- desc: matrix test {matrix.word}',
+            '\t  cmd: cat {inputs.in.txt} && echo {matrix.word} && cat {shared.cfg.json} && echo out > {outputs.result.txt}',
+            '\t  matrix:',
+            '\t\tword: [hello, howdy]',
+            '\t\tnum: [1, 2]',
+            '\t  inputs:',
+            '\t\tstdin: "stdin {matrix.word}"',
+            '\t\tfiles:',
+            '\t\t\tin.txt: "content {matrix.word}"',
+            '\t\tenv:',
+            '\t\t\tMY_VAR: "val {matrix.num}"',
+            '\t  outputs:',
+            '\t\tstdout:',
+            '\t\t\t- "{matrix.word}"',
+            '\t\t"!stdout":',
+            '\t\t\t- "nope {matrix.num}"',
+            '\t\tfiles:',
+            '\t\t\tresult.txt:',
+            '\t\t\t\tmatch:',
+            '\t\t\t\t\t- out',
+            '\t- desc: json matrix',
+            '\t  cmd: echo hi',
+            '\t  matrix:',
+            '\t\tv: [a]',
+            '\t  outputs:',
+            '\t\tjson_output:',
+            '\t\t\tk: "{matrix.v}"',
+            '\t- desc: null matrix test',
+            '\t  cmd: echo hi',
+            '\t  matrix: null',
+            '\t  outputs:',
+            '\t\tstdout:',
+            '\t\t\t- hi',
             '',
         ].join('\n');
         expect(validate(yaml)).toEqual([]);
     });
 
     it('accepts single-string setup and teardown commands', () => {
-        expect(validate('setup: echo hi\nteardown: echo bye\ntests:\n  - cmd: echo hi\n')).toEqual([]);
+        expect(validate('setup: echo hi\nteardown: echo bye\ntests:\n\t- cmd: echo hi\n')).toEqual([]);
     });
 
     it('accepts explicit null setup/teardown/shared (absent, like the CLI)', () => {
-        expect(validate('setup: null\ntests:\n  - cmd: echo hi\n')).toEqual([]);
-        expect(validate('teardown: null\ntests:\n  - cmd: echo hi\n')).toEqual([]);
-        expect(validate('shared: null\ntests:\n  - cmd: echo hi\n')).toEqual([]);
+        expect(validate('setup: null\ntests:\n\t- cmd: echo hi\n')).toEqual([]);
+        expect(validate('teardown: null\ntests:\n\t- cmd: echo hi\n')).toEqual([]);
+        expect(validate('shared: null\ntests:\n\t- cmd: echo hi\n')).toEqual([]);
     });
 
     it('accepts a top-level $schema key (the CLI does too)', () => {
-        expect(validate('$schema: https://example.com/dats.schema.json\ntests:\n  - cmd: echo hi\n')).toEqual([]);
+        expect(validate('$schema: https://example.com/dats.schema.json\ntests:\n\t- cmd: echo hi\n')).toEqual([]);
     });
 
     it('still flags setup and shared as unknown TEST-level keys', () => {
         for (const key of ['setup', 'shared']) {
-            const diags = validate(`tests:\n  - cmd: echo hi\n    ${key}: x\n`);
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  ${key}: x\n`);
             expect(diags).toHaveLength(1);
             expect(diags[0].message).toBe(`Unknown property "${key}" (dats will refuse to run this file)`);
             expect(diags[0].severity).toBe(ERROR);
@@ -580,7 +580,7 @@ describe('file-level setup/teardown/shared and $schema', () => {
 describe('setup/teardown command lists', () => {
     it('flags empty command lists', () => {
         for (const key of ['setup', 'teardown']) {
-            const diags = validate(`${key}: []\ntests:\n  - cmd: echo hi\n`);
+            const diags = validate(`${key}: []\ntests:\n\t- cmd: echo hi\n`);
             expect(diags).toHaveLength(1);
             expect(diags[0].message).toBe(`${key}: must list at least one command`);
             expect(diags[0].severity).toBe(ERROR);
@@ -588,35 +588,35 @@ describe('setup/teardown command lists', () => {
     });
 
     it('flags blank commands in a list', () => {
-        const diags = validate('setup: [""]\ntests:\n  - cmd: echo hi\n');
+        const diags = validate('setup: [""]\ntests:\n\t- cmd: echo hi\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('setup: command 1 must not be empty');
     });
 
     it('flags a blank single-string command', () => {
-        const diags = validate('setup: "   "\ntests:\n  - cmd: echo hi\n');
+        const diags = validate('setup: "   "\ntests:\n\t- cmd: echo hi\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('setup: command must not be empty');
     });
 
     it('flags non-string commands (the CLI never coerces a bare 123)', () => {
-        const diags = validate('setup: [123]\ntests:\n  - cmd: echo hi\n');
+        const diags = validate('setup: [123]\ntests:\n\t- cmd: echo hi\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('setup: command 1 must be a string');
     });
 
     it('flags a mapping-shaped value', () => {
-        const diags = validate('setup: {a: b}\ntests:\n  - cmd: echo hi\n');
+        const diags = validate('setup: {a: b}\ntests:\n\t- cmd: echo hi\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('setup must be a command string or a list of command strings');
     });
 
     it('flags matrix placeholders in hook commands, counting the single form as command 1', () => {
-        let diags = validate('setup: echo {matrix.v}\ntests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n');
+        let diags = validate('setup: echo {matrix.v}\ntests:\n\t- cmd: echo hi\n\t  matrix:\n\t\tv: [a]\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('setup command 1: {matrix.v} is not available outside tests');
 
-        diags = validate('teardown:\n  - echo one\n  - echo {matrix.v}\ntests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n');
+        diags = validate('teardown:\n\t- echo one\n\t- echo {matrix.v}\ntests:\n\t- cmd: echo hi\n\t  matrix:\n\t\tv: [a]\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('teardown command 2: {matrix.v} is not available outside tests');
     });
@@ -631,8 +631,8 @@ describe('setup/teardown command lists', () => {
 
 describe('shared fixtures', () => {
     it('flags shared blocks that declare no files', () => {
-        for (const shared of ['shared: {}\n', 'shared:\n  files: {}\n', 'shared:\n  files: null\n', 'shared:\n  copy: {}\n']) {
-            const diags = validate(`${shared}tests:\n  - cmd: echo hi\n`);
+        for (const shared of ['shared: {}\n', 'shared:\n\tfiles: {}\n', 'shared:\n\tfiles: null\n', 'shared:\n\tcopy: {}\n']) {
+            const diags = validate(`${shared}tests:\n\t- cmd: echo hi\n`);
             expect(diags, shared).toHaveLength(1);
             expect(diags[0].message).toBe('shared: must declare at least one file under files or copy');
             expect(diags[0].severity).toBe(ERROR);
@@ -640,27 +640,27 @@ describe('shared fixtures', () => {
     });
 
     it('flags unknown shared properties', () => {
-        const diags = validate('shared:\n  files:\n    a.txt: hi\n  bogus: 1\ntests:\n  - cmd: echo hi\n');
+        const diags = validate('shared:\n\tfiles:\n\t\ta.txt: hi\n\tbogus: 1\ntests:\n\t- cmd: echo hi\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('Unknown shared property "bogus" (dats will refuse to run this file)');
     });
 
     it('flags non-local shared file names', () => {
         for (const name of ['../x', '/abs']) {
-            const diags = validate(`shared:\n  files:\n    ${name}: hi\ntests:\n  - cmd: echo hi\n`);
+            const diags = validate(`shared:\n\tfiles:\n\t\t${name}: hi\ntests:\n\t- cmd: echo hi\n`);
             expect(diags).toHaveLength(1);
             expect(diags[0].message).toBe(`shared file name "${name}" must be a relative path that stays inside the shared directory`);
         }
     });
 
     it('flags a non-mapping shared value', () => {
-        const diags = validate('shared: hello\ntests:\n  - cmd: echo hi\n');
+        const diags = validate('shared: hello\ntests:\n\t- cmd: echo hi\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('"shared" must be a mapping with a "files" or "copy" key');
     });
 
     it('flags matrix placeholders in shared file contents', () => {
-        const diags = validate('shared:\n  files:\n    cfg.txt: "value {matrix.v}"\ntests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n');
+        const diags = validate('shared:\n\tfiles:\n\t\tcfg.txt: "value {matrix.v}"\ntests:\n\t- cmd: echo hi\n\t  matrix:\n\t\tv: [a]\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('shared file "cfg.txt": {matrix.v} is not available outside tests');
     });
@@ -669,7 +669,7 @@ describe('shared fixtures', () => {
 describe('matrix declarations', () => {
     it('flags invalid variable names', () => {
         for (const name of ['1bad', 'foo-bar']) {
-            const diags = validate(`tests:\n  - cmd: echo hi\n    matrix:\n      ${name}: [a]\n`);
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  matrix:\n\t\t${name}: [a]\n`);
             expect(diags).toHaveLength(1);
             expect(diags[0].message).toBe(`matrix variable name "${name}" must match ^[A-Za-z_][A-Za-z0-9_]*$`);
             expect(diags[0].severity).toBe(ERROR);
@@ -677,56 +677,56 @@ describe('matrix declarations', () => {
     });
 
     it('flags an empty matrix mapping', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    matrix: {}\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  matrix: {}\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('matrix must declare at least one variable');
     });
 
     it('flags a non-mapping matrix', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    matrix: hello\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  matrix: hello\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('matrix must be a mapping of variable names to value lists');
     });
 
     it('flags non-sequence value lists (a null value lands there too)', () => {
         for (const values of ['hello', 'null']) {
-            const diags = validate(`tests:\n  - cmd: echo hi\n    matrix:\n      v: ${values}\n`);
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  matrix:\n\t\tv: ${values}\n`);
             expect(diags, values).toHaveLength(1);
             expect(diags[0].message).toBe('matrix variable "v" must list its values as a sequence');
         }
     });
 
     it('flags empty value lists', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    matrix:\n      v: []\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  matrix:\n\t\tv: []\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('matrix variable "v" must list at least one value');
     });
 
     it('flags non-scalar and null values', () => {
         for (const values of ['[[a]]', '[null]']) {
-            const diags = validate(`tests:\n  - cmd: echo hi\n    matrix:\n      v: ${values}\n`);
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  matrix:\n\t\tv: ${values}\n`);
             expect(diags, values).toHaveLength(1);
             expect(diags[0].message).toBe('matrix variable "v" value 1: values must be scalar strings, numbers, or booleans');
         }
     });
 
     it('flags duplicate values, compared after stringification like the CLI', () => {
-        let diags = validate('tests:\n  - cmd: echo hi\n    matrix:\n      v: [a, a]\n');
+        let diags = validate('tests:\n\t- cmd: echo hi\n\t  matrix:\n\t\tv: [a, a]\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('matrix variable "v" lists duplicate value "a"');
 
         // x and "x" (and 1.50 and "1.50") produce byte-identical instances
-        diags = validate('tests:\n  - cmd: echo {matrix.v}\n    matrix:\n      v: [x, "x"]\n');
+        diags = validate('tests:\n\t- cmd: echo {matrix.v}\n\t  matrix:\n\t\tv: [x, "x"]\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('matrix variable "v" lists duplicate value "x"');
 
-        diags = validate('tests:\n  - cmd: echo {matrix.v}\n    matrix:\n      v: [1.50, "1.50"]\n');
+        diags = validate('tests:\n\t- cmd: echo {matrix.v}\n\t  matrix:\n\t\tv: [1.50, "1.50"]\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('matrix variable "v" lists duplicate value "1.50"');
     });
 
     it('flags duplicate variable names (the yaml parser reports its own error too)', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n      v: [b]\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  matrix:\n\t\tv: [a]\n\t\tv: [b]\n');
         expect(diags.map(d => d.message)).toContain('matrix variable "v" declared more than once');
         expect(diags).toHaveLength(2);
     });
@@ -735,13 +735,13 @@ describe('matrix declarations', () => {
 describe('{matrix.X} references', () => {
     it('flags undeclared references in every scanned field', () => {
         const cases: Record<string, string> = {
-            cmd: 'tests:\n  - cmd: echo {matrix.nope}\n    matrix:\n      v: [a]\n',
-            desc: 'tests:\n  - desc: hello {matrix.nope}\n    cmd: echo hi\n    matrix:\n      v: [a]\n',
-            'stdout pattern': 'tests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n    outputs:\n      stdout:\n        - "{matrix.nope}"\n',
-            json_output: 'tests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n    outputs:\n      json_output:\n        k: "{matrix.nope}"\n',
-            'env value': 'tests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n    inputs:\n      env:\n        MY_VAR: "{matrix.nope}"\n',
-            'file content': 'tests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n    inputs:\n      files:\n        in.txt: "{matrix.nope}"\n',
-            stdin: 'tests:\n  - cmd: echo hi\n    matrix:\n      v: [a]\n    inputs:\n      stdin: "{matrix.nope}"\n',
+            cmd: 'tests:\n\t- cmd: echo {matrix.nope}\n\t  matrix:\n\t\tv: [a]\n',
+            desc: 'tests:\n\t- desc: hello {matrix.nope}\n\t  cmd: echo hi\n\t  matrix:\n\t\tv: [a]\n',
+            'stdout pattern': 'tests:\n\t- cmd: echo hi\n\t  matrix:\n\t\tv: [a]\n\t  outputs:\n\t\tstdout:\n\t\t\t- "{matrix.nope}"\n',
+            json_output: 'tests:\n\t- cmd: echo hi\n\t  matrix:\n\t\tv: [a]\n\t  outputs:\n\t\tjson_output:\n\t\t\tk: "{matrix.nope}"\n',
+            'env value': 'tests:\n\t- cmd: echo hi\n\t  matrix:\n\t\tv: [a]\n\t  inputs:\n\t\tenv:\n\t\t\tMY_VAR: "{matrix.nope}"\n',
+            'file content': 'tests:\n\t- cmd: echo hi\n\t  matrix:\n\t\tv: [a]\n\t  inputs:\n\t\tfiles:\n\t\t\tin.txt: "{matrix.nope}"\n',
+            stdin: 'tests:\n\t- cmd: echo hi\n\t  matrix:\n\t\tv: [a]\n\t  inputs:\n\t\tstdin: "{matrix.nope}"\n',
         };
         for (const [field, yaml] of Object.entries(cases)) {
             const diags = validate(yaml);
@@ -752,29 +752,29 @@ describe('{matrix.X} references', () => {
     });
 
     it('lists declared variables in declaration order', () => {
-        const diags = validate('tests:\n  - cmd: echo {matrix.nope}\n    matrix:\n      b: [1]\n      a: [2]\n');
+        const diags = validate('tests:\n\t- cmd: echo {matrix.nope}\n\t  matrix:\n\t\tb: [1]\n\t\ta: [2]\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('{matrix.nope} is not a declared matrix variable (declared: b, a)');
     });
 
     it('flags references in a test that declares no matrix, explicit null included', () => {
-        let diags = validate('tests:\n  - cmd: echo {matrix.nope}\n');
+        let diags = validate('tests:\n\t- cmd: echo {matrix.nope}\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('{matrix.nope} is used but the test declares no matrix');
 
-        diags = validate('tests:\n  - cmd: echo {matrix.x}\n    matrix: null\n');
+        diags = validate('tests:\n\t- cmd: echo {matrix.x}\n\t  matrix: null\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('{matrix.x} is used but the test declares no matrix');
     });
 
     it('flags the empty-name form {matrix.}', () => {
-        const diags = validate('tests:\n  - cmd: echo {matrix.}\n    matrix:\n      v: [a]\n');
+        const diags = validate('tests:\n\t- cmd: echo {matrix.}\n\t  matrix:\n\t\tv: [a]\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('{matrix.} must name a matrix variable');
     });
 
     it('treats any {matrix.X} text as a reference, even names a matrix could not declare', () => {
-        const diags = validate('tests:\n  - cmd: echo {matrix.foo-bar}\n    matrix:\n      v: [a]\n');
+        const diags = validate('tests:\n\t- cmd: echo {matrix.foo-bar}\n\t  matrix:\n\t\tv: [a]\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('{matrix.foo-bar} is not a declared matrix variable (declared: v)');
     });
@@ -782,14 +782,14 @@ describe('{matrix.X} references', () => {
     it('does not scan fixture file names or env var names (out of scope, like the CLI)', () => {
         const yaml = [
             'tests:',
-            '  - cmd: echo hi',
-            '    matrix:',
-            '      v: [a]',
-            '    inputs:',
-            '      files:',
-            '        "{matrix.v}.txt": content',
-            '      env:',
-            '        "{matrix.v}": value',
+            '\t- cmd: echo hi',
+            '\t  matrix:',
+            '\t\tv: [a]',
+            '\t  inputs:',
+            '\t\tfiles:',
+            '\t\t\t"{matrix.v}.txt": content',
+            '\t\tenv:',
+            '\t\t\t"{matrix.v}": value',
             '',
         ].join('\n');
         expect(validate(yaml)).toEqual([]);
@@ -803,32 +803,36 @@ describe('outputs.snapshot', () => {
     // plain strings and the CLI rejects them.
     it('accepts scalar booleans (core-schema spellings only)', () => {
         for (const value of ['true', 'false', 'True', 'TRUE', 'null']) {
-            const yaml = `tests:\n  - cmd: echo hi\n    outputs:\n      snapshot: ${value}\n`;
+            const yaml = `tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tsnapshot: ${value}\n`;
             expect(validate(yaml), `snapshot: ${value}`).toEqual([]);
         }
     });
 
     it('accepts stream-boolean mappings', () => {
         for (const body of [
-            '        stdout: true',
-            '        stderr: true',
-            '        stdout: true\n        stderr: true',
-            '        stdout: false\n        stderr: true',
-            '        stdout: True',
+            '\t\t\tstdout: true',
+            '\t\t\tstderr: true',
+            '\t\t\tstdout: true\n\t\t\tstderr: true',
+            '\t\t\tstdout: false\n\t\t\tstderr: true',
+            '\t\t\tstdout: True',
         ]) {
-            const yaml = `tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n${body}\n`;
+            const yaml = `tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tsnapshot:\n${body}\n`;
             expect(validate(yaml), body).toEqual([]);
         }
     });
 
-    it('leaves an alias at the snapshot key to the CLI (which resolves it)', () => {
-        const yaml = 'tests:\n  - desc: &b true\n    cmd: echo hi\n    outputs:\n      snapshot: *b\n';
-        expect(validate(yaml)).toEqual([]);
+    // yaml-fixed has no anchors or aliases: "&b true" is the literal text of
+    // desc, and "*b" is the literal text of snapshot, which is not a boolean.
+    it('flags an alias at the snapshot key, which is plain text to the runner', () => {
+        const yaml = 'tests:\n\t- desc: &b true\n\t  cmd: echo hi\n\t  outputs:\n\t\tsnapshot: *b\n';
+        const diags = validate(yaml);
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)');
     });
 
     it('flags non-boolean scalars, sequences, quoted "true" and the YAML 1.1 spellings', () => {
         for (const value of ['"true"', '"TRUE"', '1', '""', '[true]', 'enabled', 'yes', '"yes"', 'y', 'on', 'Off']) {
-            const yaml = `tests:\n  - cmd: echo hi\n    outputs:\n      snapshot: ${value}\n`;
+            const yaml = `tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tsnapshot: ${value}\n`;
             const diags = validate(yaml);
             expect(diags, `snapshot: ${value}`).toHaveLength(1);
             expect(diags[0].message).toBe('snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)');
@@ -837,49 +841,49 @@ describe('outputs.snapshot', () => {
     });
 
     it('flags unknown stream names', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n        stdout: true\n        foo: true\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tsnapshot:\n\t\t\tstdout: true\n\t\t\tfoo: true\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('snapshot: unknown key "foo" (allowed: stdout, stderr)');
         expect(diags[0].severity).toBe(ERROR);
     });
 
     it('flags a merge key like any other unknown key (the CLI does not merge here)', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n        <<: {stdout: true}\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tsnapshot:\n\t\t\t<<: {stdout: true}\n');
         expect(diags.map(d => d.message)).toContain('snapshot: unknown key "<<" (allowed: stdout, stderr)');
     });
 
     it('flags duplicate stream keys (the yaml parser reports its own error too)', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n        stdout: true\n        stdout: true\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tsnapshot:\n\t\t\tstdout: true\n\t\t\tstdout: true\n');
         expect(diags.map(d => d.message)).toContain('snapshot: stdout declared more than once');
         expect(diags).toHaveLength(2);
     });
 
     it('flags non-boolean stream values, including quoted "false" and aliases', () => {
         for (const [body, stream] of [
-            ['        stdout: 1', 'stdout'],
-            ['        stdout: "false"', 'stdout'],
-            ['        stdout: [true]', 'stdout'],
-            ['        stderr: text', 'stderr'],
-            ['        stderr: no', 'stderr'],
-            ['        stdout: null', 'stdout'],
-            ['        stdout:', 'stdout'],
+            ['\t\t\tstdout: 1', 'stdout'],
+            ['\t\t\tstdout: "false"', 'stdout'],
+            ['\t\t\tstdout: [true]', 'stdout'],
+            ['\t\t\tstderr: text', 'stderr'],
+            ['\t\t\tstderr: no', 'stderr'],
+            ['\t\t\tstdout: null', 'stdout'],
+            ['\t\t\tstdout:', 'stdout'],
         ] as const) {
-            const yaml = `tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n${body}\n`;
+            const yaml = `tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tsnapshot:\n${body}\n`;
             const diags = validate(yaml);
             expect(diags, body).toHaveLength(1);
             expect(diags[0].message).toBe(`snapshot: ${stream} must be a boolean`);
             expect(diags[0].severity).toBe(ERROR);
         }
 
-        // The CLI's manual mapping walk does not resolve alias values
-        const diags = validate('tests:\n  - desc: &b true\n    cmd: echo hi\n    outputs:\n      snapshot:\n        stdout: *b\n');
+        // An alias is literal text to yaml-fixed, so it is not a boolean either
+        const diags = validate('tests:\n\t- desc: &b true\n\t  cmd: echo hi\n\t  outputs:\n\t\tsnapshot:\n\t\t\tstdout: *b\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('snapshot: stdout must be a boolean');
     });
 
     it('flags mappings that enable no stream (empty or all-false)', () => {
         for (const value of ['{}', '{stdout: false}', '{stdout: false, stderr: false}']) {
-            const yaml = `tests:\n  - cmd: echo hi\n    outputs:\n      snapshot: ${value}\n`;
+            const yaml = `tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tsnapshot: ${value}\n`;
             const diags = validate(yaml);
             expect(diags, `snapshot: ${value}`).toHaveLength(1);
             expect(diags[0].message).toBe('snapshot: must enable at least one of stdout, stderr');
@@ -888,13 +892,13 @@ describe('outputs.snapshot', () => {
     });
 
     it('does not cascade the enables-nothing error onto entry-level errors (the CLI stops at its first)', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n        stdout: false\n        foo: true\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tsnapshot:\n\t\t\tstdout: false\n\t\t\tfoo: true\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('snapshot: unknown key "foo" (allowed: stdout, stderr)');
     });
 
     it('still flags snapshot as an unknown TEST-level key', () => {
-        const diags = validate('tests:\n  - cmd: echo hi\n    snapshot: true\n');
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  snapshot: true\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toBe('Unknown property "snapshot" (dats will refuse to run this file)');
     });
@@ -1144,3 +1148,26 @@ describe('outputs.files exists', () => {
     });
 });
 
+
+describe('indentation is the dialect rule the CLI checks first', () => {
+    it('flags space indentation, at the first offending line', () => {
+        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      stdout:\n        - hi\n');
+        expect(diags[0].message).toBe('spaces cannot be used for indentation; indent with tabs (spaces only align after a tab)');
+        expect(diags[0].severity).toBe(ERROR);
+        const range = diags[0].range as any;
+        expect([range.startLine, range.startCharacter, range.endCharacter]).toEqual([1, 0, 2]);
+        // reported once, like the CLI, which stops at its first parse error
+        expect(diags.filter(d => d.message.startsWith('spaces cannot'))).toHaveLength(1);
+    });
+
+    it('flags a tab that follows alignment spaces', () => {
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  \toutputs:\n');
+        expect(diags[0].message).toBe('tab after spaces; indent with tabs first, then align with spaces');
+        const range = diags[0].range as any;
+        expect([range.startLine, range.startCharacter]).toEqual([2, 3]);
+    });
+
+    it('accepts a whitespace-only line at any indentation', () => {
+        expect(validate('tests:\n\t- cmd: echo hi\n \n\t- cmd: echo bye\n')).toEqual([]);
+    });
+});

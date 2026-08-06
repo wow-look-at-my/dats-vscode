@@ -31,12 +31,15 @@ bad-shared-matrix.dats REJECT
 bad-shared-unknown.dats REJECT
 bad-snapshot-none.dats REJECT
 bad-snapshot-yes.dats REJECT
+bad-space-indent.dats REJECT
+bad-tab-after-spaces.dats REJECT
 bad-tests-scalar.dats REJECT
 bad-timeout-float.dats REJECT
 bad-timeout-neg.dats REJECT
 bad-unknown-output.dats REJECT
 bad-unknown-test.dats REJECT
 bad-unknown-top.dats REJECT
+ok-blank-line-whitespace.dats ACCEPT
 ok-blockscalar.dats ACCEPT
 ok-comment.dats ACCEPT
 ok-env.dats ACCEPT
