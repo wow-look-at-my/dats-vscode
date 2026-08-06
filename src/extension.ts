@@ -32,7 +32,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.workspace.onDidCloseTextDocument(doc => diagnosticCollection.delete(doc.uri))
     );
 
-    // Register completion provider for {inputs.X} and {outputs.X}
+    // Register completion provider for {inputs.X}, {outputs.X} and {shared.X}
     const placeholderCompletionProvider = vscode.languages.registerCompletionItemProvider(
         'dats',
         new DatsCompletionProvider(),

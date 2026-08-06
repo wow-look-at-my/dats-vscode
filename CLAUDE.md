@@ -23,7 +23,7 @@ just typecheck        # typecheck only
 just install          # build, then install the .vsix into local VS Code
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same package.json scripts in a single `all-builds` job (the org's required status check name) and uploads the `.vsix` artifact. The justfile and CI both call the package.json scripts - change behavior there, not in two places.
+CI (`.github/workflows/ci.yml`) runs the same package.json scripts in a single `build` job and uploads the `.vsix` artifact. Do NOT name a job `all-builds`: that status is posted by the org's required-builds-manager app, which aggregates a repo's builds on its own, so a job wearing the name only shadows the real one in the UI. The justfile and CI both call the package.json scripts - change behavior there, not in two places.
 
 ## Architecture
 
