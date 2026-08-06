@@ -72,6 +72,8 @@
     ],
     "configurationDefaults": {
       "[dats]": {
+        "editor.insertSpaces": false,
+        "editor.detectIndentation": false,
         "editor.wordBasedSuggestions": "off",
         "editor.suggest.showWords": false
       }

@@ -1,6 +1,18 @@
 // Pure parsing functions - no VS Code dependencies
 
 /**
+ * Structural depth of a line. In the dats dialect that is its count of leading
+ * TABS -- spaces after them align a sequence item's keys past its "- " and
+ * never nest -- so counting characters would read a "\t\tfiles:" as SHALLOWER
+ * than the "\t  inputs:" holding it. A space-indented file (which the CLI
+ * rejects, but the editor still opens) keeps the old count-the-spaces reading.
+ */
+function indentDepth(line: string): number {
+    const indent = /^(\t*)( *)/.exec(line)!;
+    return indent[1].length > 0 ? indent[1].length : indent[2].length;
+}
+
+/**
  * Find the range of the current test given document lines and cursor position
  * Returns [startLine, endLine] or undefined if not in a test
  *
@@ -20,12 +32,11 @@ export function findTestRange(lines: string[], cursorLine: number): [number, num
         if (trimmed.length === 0 || trimmed.startsWith('#')) continue;
 
         if (testsIndent === -1) {
-            const testsMatch = line.match(/^(\s*)tests\s*:/);
-            if (testsMatch) testsIndent = testsMatch[1].length;
+            if (/^\s*tests\s*:/.test(line)) testsIndent = indentDepth(line);
             continue;
         }
 
-        const indent = line.match(/^(\s*)/)![1].length;
+        const indent = indentDepth(line);
         const isItem = /^\s*-(\s|$)/.test(line);
 
         // The first item under tests: determines the indentation of all test
@@ -66,12 +77,12 @@ export function extractBlockLines(lines: string[], blockName: string): string[] 
         const blockMatch = line.match(blockPattern);
         if (!inBlock && blockMatch) {
             inBlock = true;
-            blockIndent = blockMatch[1].length;
+            blockIndent = indentDepth(line);
             continue;
         }
 
         if (inBlock) {
-            const currentIndent = line.match(/^(\s*)/)?.[1].length ?? 0;
+            const currentIndent = indentDepth(line);
             const isNonEmpty = line.trim().length > 0;
             if (isNonEmpty && currentIndent <= blockIndent) break;
             result.push(line);
@@ -97,13 +108,13 @@ export function extractBlockKeys(lines: string[], blockName: string): string[] {
         const blockMatch = line.match(blockPattern);
         if (blockMatch) {
             inBlock = true;
-            blockIndent = blockMatch[1].length;
+            blockIndent = indentDepth(line);
             keyIndent = -1; // Will be set by first key
             continue;
         }
 
         if (inBlock) {
-            const currentIndent = line.match(/^(\s*)/)?.[1].length ?? 0;
+            const currentIndent = indentDepth(line);
             const isNonEmpty = line.trim().length > 0;
 
             // Check if we've exited the block (same or less indentation, non-empty)
@@ -113,9 +124,10 @@ export function extractBlockKeys(lines: string[], blockName: string): string[] {
             }
 
             // Extract key - only at the first level of indentation after block header
-            const keyMatch = line.match(/^(\s+)([a-zA-Z0-9_."!-]+):/);
+            // Fixture names may be nested paths (sub/file.txt)
+            const keyMatch = line.match(/^\s+([a-zA-Z0-9_./"!-]+):/);
             if (keyMatch) {
-                const thisIndent = keyMatch[1].length;
+                const thisIndent = currentIndent;
 
                 // Set expected key indent from first key found
                 if (keyIndent === -1 && thisIndent > blockIndent) {
@@ -125,7 +137,7 @@ export function extractBlockKeys(lines: string[], blockName: string): string[] {
                 // Only extract if at the expected key indentation level
                 if (thisIndent === keyIndent) {
                     // Remove quotes if present
-                    const key = keyMatch[2].replace(/^"|"$/g, '');
+                    const key = keyMatch[1].replace(/^"|"$/g, '');
                     keys.push(key);
                 }
             }
@@ -136,10 +148,25 @@ export function extractBlockKeys(lines: string[], blockName: string): string[] {
 }
 
 /**
- * Find input file names declared under inputs.files in the given test lines
+ * Find input fixture names in the given test lines. files and copy share one
+ * directory and one {inputs.X} namespace, so both are offered.
  */
 export function findInputs(testLines: string[]): string[] {
-    return extractBlockKeys(extractBlockLines(testLines, 'inputs'), 'files');
+    const inputs = extractBlockLines(testLines, 'inputs');
+    return dedupe([...extractBlockKeys(inputs, 'files'), ...extractBlockKeys(inputs, 'copy')]);
+}
+
+/**
+ * Find shared fixture names declared in the file-level shared block (files and
+ * copy alike), addressed as {shared.X} from anywhere in the file.
+ */
+export function findShared(lines: string[]): string[] {
+    const shared = extractBlockLines(lines, 'shared');
+    return dedupe([...extractBlockKeys(shared, 'files'), ...extractBlockKeys(shared, 'copy')]);
+}
+
+function dedupe(names: string[]): string[] {
+    return [...new Set(names)];
 }
 
 /**
@@ -164,5 +191,14 @@ export function matchInputsPlaceholder(textBeforeCursor: string): string | undef
  */
 export function matchOutputsPlaceholder(textBeforeCursor: string): string | undefined {
     const match = textBeforeCursor.match(/\{outputs\.([a-zA-Z0-9_.-]*)$/);
+    return match ? match[1] : undefined;
+}
+
+/**
+ * Check if text before cursor matches {shared. pattern
+ * Returns the prefix after the dot, or undefined if no match
+ */
+export function matchSharedPlaceholder(textBeforeCursor: string): string | undefined {
+    const match = textBeforeCursor.match(/\{shared\.([a-zA-Z0-9_.-]*)$/);
     return match ? match[1] : undefined;
 }

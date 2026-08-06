@@ -1,0 +1,2 @@
+tests:
+  - cmd: echo hi

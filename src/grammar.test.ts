@@ -194,7 +194,9 @@ describe('dats grammar injection over the built-in YAML grammar', () => {
         expect(scopesOf(tokens, 3, 'setup')).toContain('entity.name.tag.yaml');
         expect(scopesOf(tokens, 7, 'matrix')).toContain('entity.name.tag.yaml');
 
-        // setup commands are NOT cmd lines: no shell scopes (documented gap)
+        // a bare hook command is shell text, but only the dialect's tab form is
+        // recognized: at two spaces there is no telling a hook item from a
+        // pattern list item (see the dialect tests below)
         for (const token of tokens[4]) {
             expect(token.scopes.filter(s => s.endsWith('.shell'))).toEqual([]);
         }
@@ -203,13 +205,9 @@ describe('dats grammar injection over the built-in YAML grammar', () => {
         expect(scopesOf(tokens, 6, 'cat')).toContain('entity.name.function.shell');
         expect(scopesOf(tokens, 6, 'echo')).toContain('entity.name.function.shell');
 
-        // {shared.X}/{matrix.X} are ordinary shell arguments, not dats
-        // placeholders -- highlighting them is a documented cosmetic gap
-        for (const placeholder of ['{shared.cfg.json}', '{matrix.word}']) {
-            const scopes = scopesOf(tokens, 6, placeholder);
-            expect(scopes).toContain('string.unquoted.argument.shell');
-            expect(scopes).not.toContain('variable.parameter.dats');
-        }
+        // {shared.X}/{matrix.X} are placeholders inside a shell argument
+        expect(scopesOf(tokens, 6, '{shared.cfg.json}')).toContain('variable.parameter.dats');
+        expect(scopesOf(tokens, 6, '{matrix.word}')).toContain('variable.other.matrix.dats');
     });
 
     it('tokenizes snapshot-format files (outputs.snapshot) without breaking', () => {
@@ -264,6 +262,52 @@ describe('dats grammar injection over the built-in YAML grammar', () => {
                     `line ${lineIdx} token ${JSON.stringify(token.text)}`
                 ).toEqual([]);
             }
+        }
+    });
+});
+
+describe('the dats dialect (tabs, bare negated keys)', () => {
+    it('scopes tab-indented sequence items as sequence items, not illegal text', () => {
+        const tokens = tokenize(['tests:', '\t- cmd: echo hi', '\t  outputs:', '\t\tstdout:', '\t\t\t- hi']);
+
+        // the built-in YAML grammar only knows space indentation and scopes
+        // these dashes invalid.illegal.unrecognized.yaml on its own
+        expect(scopesOf(tokens, 4, '-')).toContain('punctuation.definition.block.sequence.item.yaml');
+        expect(scopesOf(tokens, 4, '-')).not.toContain('invalid.illegal.unrecognized.yaml');
+        // the shell rules still reach a cmd line under a tab-indented dash
+        expect(scopesOf(tokens, 1, 'echo')).toContain('entity.name.function.shell');
+    });
+
+    it('scopes a bare hook command as shell', () => {
+        const tokens = tokenize(['setup:', '\t- cp {shared.a} out', 'tests:', '\t- cmd: echo hi', '\t  outputs:', '\t\tstdout:', '\t\t\t- cp is not a command here']);
+
+        expect(scopesOf(tokens, 1, 'cp')).toContain('entity.name.function.shell');
+        expect(scopesOf(tokens, 1, '{shared.a}')).toContain('variable.parameter.dats');
+        // a deeper list is a pattern list, not a command
+        for (const token of tokens[6]) {
+            expect(token.scopes.filter(s => s.endsWith('.shell'))).toEqual([]);
+        }
+    });
+
+    it('scopes {shared.X} and {matrix.X} placeholders too', () => {
+        const tokens = tokenize([
+            'shared:',
+            '\tfiles:',
+            '\t\tcfg.json: "{}"',
+            'tests:',
+            '\t- cmd: cat {shared.cfg.json} {matrix.name}',
+        ]);
+
+        expect(scopesOf(tokens, 4, '{shared.cfg.json}')).toContain('variable.parameter.dats');
+        expect(scopesOf(tokens, 4, '{matrix.name}')).toContain('variable.other.matrix.dats');
+    });
+
+    it('scopes bare negated keys as keys, not as a tag shorthand', () => {
+        const tokens = tokenize(['tests:', '\t- cmd: echo hi', '\t  outputs:', '\t\t!stdout:', '\t\t\t- boom', '\t\t!files:', '\t\t\tstray.txt:']);
+
+        for (const [line, key] of [[3, '!stdout'], [5, '!files']] as const) {
+            expect(scopesOf(tokens, line, key)).toContain('entity.name.tag.yaml');
+            expect(scopesOf(tokens, line, key)).not.toContain('storage.type.tag.shorthand.yaml');
         }
     });
 });

@@ -69,6 +69,46 @@ const FIELD_DOCS: Record<string, { summary: string; detail?: string }> = {
         summary: 'Expected JSON value of the whole stdout',
         detail: 'Stdout must parse as a single JSON value that deep-equals this value: object keys are order-insensitive, array elements are order-sensitive, numbers compare by value. Any JSON value is allowed, including null.'
     },
+    shared: {
+        summary: 'File-level fixtures, materialized once per file',
+        detail: 'files: map of name to content, and/or copy: map of name to a host file to copy in. Both land in the shared directory, addressed as {shared.name}, before setup runs. At least one entry across the two is required, and a name may appear in only one of them. {matrix.X} cannot be used here -- no test instance exists yet.'
+    },
+    setup: {
+        summary: 'Commands run once before the file tests',
+        detail: 'A command string, or a list of entries -- each a command string or a mapping of cmd plus optional env, stdin_file and timeout (default 30s, must be greater than 0). A failure fails every test in the file; teardown still runs. Only {shared.X} expands here, and {matrix.X} is rejected.'
+    },
+    teardown: {
+        summary: 'Commands run once after the file tests',
+        detail: 'Same form as setup. Always runs -- after failures, and even after setup failed -- and one failing entry does not stop the rest. Any failure marks the file failed even when every test passed.'
+    },
+    sandbox: {
+        summary: 'File-level sandbox control',
+        detail: 'false opts this file commands (tests AND hooks) out of the sandbox; true is the explicit opt-in. Or a mapping of enabled / network / image, which can only narrow what the CLI already allows: under --no-sandbox the block is inert. There is deliberately no way to declare extra writable host paths -- scratch space goes in the test temp directory.'
+    },
+    enabled: {
+        summary: 'Whether this file commands are sandboxed',
+        detail: 'Boolean. Unstated means yes (the CLI decides whether a sandbox is used at all; this only narrows it).'
+    },
+    network: {
+        summary: 'Whether sandboxed commands keep network access',
+        detail: 'Boolean. Unstated means yes -- cutting the network is a declared choice, never inherited by accident.'
+    },
+    image: {
+        summary: 'Container image for the docker sandbox backend',
+        detail: 'Non-empty string, used only by the docker backend (it has no effect under bwrap or seatbelt). {matrix.X} is rejected: the sandbox is resolved once per file, before any instance exists.'
+    },
+    copy: {
+        summary: 'Host files copied into the fixture directory, writable',
+        detail: 'Map of fixture name to a host source path, resolved relative to the .dats file directory. The read-write counterpart of the sandbox read-only mount of the working directory; permission bits are preserved. Names follow the same locality rule as files, and a name may not appear under both.'
+    },
+    stdin_file: {
+        summary: 'File piped to a hook command stdin',
+        detail: 'Non-empty path, resolved like a copy source (relative to the .dats file directory). Its raw content is piped to the command.'
+    },
+    matrix: {
+        summary: 'Parameter variables that expand the test into instances',
+        detail: 'Map of variable name to a list of scalar values. The test expands into one instance per combination (cartesian product, declaration order, last variable varying fastest), each reported as `desc [k=v, ...]`. {matrix.X} substitutes into desc, cmd, stdin, file contents, copy sources, env values and output patterns.'
+    },
     exists: {
         summary: 'File existence check',
         detail: 'true to assert file exists, false to assert it does not exist.'
@@ -101,8 +141,8 @@ export class DatsHoverProvider implements vscode.HoverProvider {
         const beforeWord = line.substring(0, wordRange.start.character);
 
         // Is this a key? (has colon after, and is at start of meaningful content)
-        // Keys like "!stdout" must be quoted in YAML, so allow a closing quote
-        // between the word and the colon, and an opening quote before the word.
+        // Negated keys are written bare (!stdout) but the quoted spelling still
+        // parses, so allow a quote on either side of the word.
         const isKey = afterWord.match(/^"?\s*:/) && beforeWord.match(/^[\s-]*"?$/);
 
         if (!isKey) return undefined;

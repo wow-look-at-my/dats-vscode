@@ -6,37 +6,37 @@ DATS is a declarative YAML format for defining command-line tests, executed nati
 
 ## Features
 
-- Syntax highlighting for `.dats` files, including shell highlighting of `cmd` values and `{inputs.X}` / `{outputs.X}` placeholders
-- Inline diagnostics from a built-in validator that mirrors the runner's strict parsing: unknown keys, missing/empty `cmd`, exit code and timeout validation, output check and `outputs.snapshot` shapes, `no tests defined`, file-level `setup`/`teardown`/`shared` and per-test `matrix` validation
-- Context-aware completions for test keys, whole-test snippets, and `{inputs.X}` / `{outputs.X}` placeholders (suggesting the files declared in the current test)
+- Syntax highlighting for `.dats` files, including shell highlighting of `cmd` values and bare `setup` / `teardown` commands, and `{inputs.X}` / `{outputs.X}` / `{shared.X}` / `{matrix.X}` placeholders
+- Inline diagnostics from a built-in validator that mirrors the runner's strict parsing: unknown keys, missing/empty `cmd`, exit code and timeout validation, output check and `outputs.snapshot` shapes, `no tests defined`, the file-level `setup` / `teardown` / `shared` / `sandbox` blocks, `copy` fixtures, and per-test `matrix` validation
+- Context-aware completions for file-level and test keys, whole-test snippets, and `{inputs.X}` / `{outputs.X}` / `{shared.X}` placeholders (suggesting the fixtures the file actually declares)
 - Hover documentation for test fields
+- Understands the runner's YAML dialect: tab indentation (flagged when a file uses spaces, and the editor defaults to inserting tabs in `.dats` files) and bare `!stdout` / `!stderr` / `!files` keys
 
 ## Example
 
 ```yaml
 tests:
-  - desc: echo test
-    cmd: echo Hello World
-    outputs:
-      stdout:
-        - "Hello World"
+	- desc: echo test
+	  cmd: echo Hello World
+	  outputs:
+		stdout:
+			- "Hello World"
 
-  - desc: cat reads file
-    inputs:
-      files:
-        input.txt: |
-          Hello, world!
-    cmd: cat {inputs.input.txt}
-    outputs:
-      stdout:
-        - "Hello, world!"
+	- desc: no error on the happy path
+	  cmd: echo Hello World
+	  outputs:
+		!stdout:
+			- "error"
 
-  - desc: grep returns 1 when not found
-    exit: 1
-    inputs:
-      stdin: "hello world"
-    cmd: grep -q "notfound"
+	- desc: grep returns 1 when not found
+	  exit: 1
+	  inputs:
+		stdin: "hello world"
+	  cmd: grep -q "notfound"
 ```
+
+Indentation is tabs -- one per level, spaces only to align past a `- ` marker -- and the
+negated keys (`!stdout`, `!stderr`, `!files`) are written bare.
 
 ## Requirements
 
@@ -61,9 +61,9 @@ validation, and can be wired into a YAML language server manually. When the runn
 schema changes, re-copy it here; it must stay byte-identical to the runner's master copy.
 
 Current copy: synced from
-[wow-look-at-my/dats@d76c889](https://github.com/wow-look-at-my/dats/commit/d76c88907078eeae0ce78a02f2bf84ca18cdc164)
-(adds `outputs.snapshot` golden-file assertions, blessed with the runner's `--update` flag,
-merged as [dats#24](https://github.com/wow-look-at-my/dats/pull/24)).
+[wow-look-at-my/dats@5b67ca8](https://github.com/wow-look-at-my/dats/commit/5b67ca8b511c88e560bc34b6b05e077460be1413)
+(the file-level `sandbox` block, hook commands in the mapping form, and `inputs.copy` /
+`shared.copy` fixtures).
 
 ## Links
 

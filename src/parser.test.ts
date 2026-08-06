@@ -1,13 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-    findTestRange,
-    extractBlockLines,
-    extractBlockKeys,
-    findInputs,
-    findOutputs,
-    matchInputsPlaceholder,
-    matchOutputsPlaceholder,
-} from './parser';
+import { findTestRange, extractBlockLines, extractBlockKeys, findInputs, findOutputs, matchInputsPlaceholder, matchOutputsPlaceholder, findShared, matchSharedPlaceholder } from './parser';
 
 describe('findTestRange', () => {
     it('finds test range for single test', () => {
@@ -242,5 +234,37 @@ describe('matchOutputsPlaceholder', () => {
     it('returns undefined when no match', () => {
         expect(matchOutputsPlaceholder('file.txt')).toBeUndefined();
         expect(matchOutputsPlaceholder('{inputs.file')).toBeUndefined();
+    });
+});
+
+describe('copy fixtures and shared placeholders', () => {
+    const file = [
+        'shared:',
+        '\tfiles:',
+        '\t\tconfig.json: "{}"',
+        '\tcopy:',
+        '\t\thelper.sh: fixtures/helper.sh',
+        'tests:',
+        '\t- cmd: bash {shared.helper.sh}',
+        '\t  inputs:',
+        '\t\tfiles:',
+        '\t\t\tdata.txt: hi',
+        '\t\tcopy:',
+        '\t\t\treal.bin: fixtures/real.bin',
+    ];
+
+    it('offers copy destinations alongside files in the inputs namespace', () => {
+        const range = findTestRange(file, 6)!;
+        expect(findInputs(file.slice(range[0], range[1]))).toEqual(['data.txt', 'real.bin']);
+    });
+
+    it('finds shared fixtures from both files and copy', () => {
+        expect(findShared(file)).toEqual(['config.json', 'helper.sh']);
+    });
+
+    it('matches a {shared. placeholder prefix', () => {
+        expect(matchSharedPlaceholder('cmd: bash {shared.hel')).toBe('hel');
+        expect(matchSharedPlaceholder('cmd: bash {shared.')).toBe('');
+        expect(matchSharedPlaceholder('cmd: bash {inputs.')).toBeUndefined();
     });
 });

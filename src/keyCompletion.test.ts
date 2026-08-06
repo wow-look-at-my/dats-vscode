@@ -93,10 +93,9 @@ function expandSnippet(snippet: string): string {
         .replace(/\$(\d+)/g, (_m, index) => defaults[index] ?? '');
 }
 
-/** Simulates accepting a snippet on a line indented by `indent` spaces: VS Code
- *  prepends the current line's indentation to every continuation line. */
-function insertAtIndent(expanded: string, indent: number): string {
-    const pad = ' '.repeat(indent);
+/** Simulates accepting a snippet on a line indented by `pad`: VS Code prepends
+ *  the current line's indentation to every continuation line. */
+function insertAtIndent(expanded: string, pad: string): string {
     return expanded
         .split('\n')
         .map(line => pad + line)
@@ -105,8 +104,9 @@ function insertAtIndent(expanded: string, indent: number): string {
 
 describe('context-aware key completion', () => {
     it('offers test keys (including timeout) at test level, minus existing ones', () => {
-        const text = 'tests:\n  - cmd: echo hi\n    \n';
-        const items = complete(text, 2, 4)!;
+        // the cursor sits on a fresh line aligned under the item's keys
+        const text = 'tests:\n\t- cmd: echo hi\n\t  \n';
+        const items = complete(text, 2, 3)!;
         const labels = items.map(i => i.label);
         expect(labels).toContain('timeout');
         expect(labels).toContain('desc');
@@ -117,8 +117,8 @@ describe('context-aware key completion', () => {
     });
 
     it('offers output keys (including json_output and snapshot) inside outputs', () => {
-        const text = 'tests:\n  - cmd: echo hi\n    outputs:\n      stdout:\n        - "x"\n';
-        const items = complete(text, 3, 6)!;
+        const text = 'tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tstdout:\n\t\t\t- "x"\n';
+        const items = complete(text, 3, 2)!;
         const labels = items.map(i => i.label);
         expect(labels).toContain('json_output');
         expect(labels).toContain('snapshot');
@@ -131,50 +131,51 @@ describe('context-aware key completion', () => {
     });
 
     it('returns nothing mid-value', () => {
-        const text = 'tests:\n  - cmd: echo hi\n';
+        const text = 'tests:\n\t- cmd: echo hi\n';
         expect(complete(text, 1, 15)).toBeUndefined();
     });
 
     it('uses relative continuation indentation in multi-line insert texts', () => {
-        const text = 'tests:\n  - cmd: echo hi\n    outputs:\n      stdout:\n        - "x"\n';
-        const items = complete(text, 3, 6)!;
+        const text = 'tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tstdout:\n\t\t\t- "x"\n';
+        const items = complete(text, 3, 2)!;
         const stderr = items.find(i => i.label === 'stderr')!;
         // snippet whitespace normalization adds the line indent; the text itself
-        // must not hardcode an absolute depth
-        expect(insertTextOf(stderr)).toBe('stderr:\n  - ');
+        // must not hardcode an absolute depth. A level is one tab, not spaces.
+        expect(insertTextOf(stderr)).toBe('stderr:\n\t- ');
         expect(stderr.insertText).toBeInstanceOf(SnippetString);
 
+        // Negated keys go in bare -- yaml-fixed has no tags to confuse them with
         const negated = items.find(i => i.label === '!stdout')!;
-        expect(insertTextOf(negated)).toBe('"!stdout":\n  - ');
+        expect(insertTextOf(negated)).toBe('!stdout:\n\t- ');
     });
 });
 
 describe('completion replace range', () => {
     it('covers a typed "!" so accepting "!stdout" does not double it', () => {
         // mid-typing document: the user typed "!st" on a new line inside outputs
-        const text = 'tests:\n  - cmd: echo hi\n    outputs:\n      stdout:\n        - "x"\n      !st\n';
-        const items = complete(text, 5, 9)!;
+        const text = 'tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tstdout:\n\t\t\t- "x"\n\t\t!st\n';
+        const items = complete(text, 5, 5)!;
         const negated = items.find(i => i.label === '!stdout')!;
         expect(negated.range).toBeDefined();
         expect(rangeOf(negated).start.line).toBe(5);
-        expect(rangeOf(negated).start.character).toBe(6); // start of "!st", including the "!"
-        expect(rangeOf(negated).end.character).toBe(9);
+        expect(rangeOf(negated).start.character).toBe(2); // start of "!st", including the "!"
+        expect(rangeOf(negated).end.character).toBe(5);
     });
 
     it('covers a plain typed prefix', () => {
-        const text = 'tests:\n  - cmd: echo hi\n    time\n';
-        const items = complete(text, 2, 8)!;
+        const text = 'tests:\n\t- cmd: echo hi\n\t  time\n';
+        const items = complete(text, 2, 7)!;
         const timeout = items.find(i => i.label === 'timeout')!;
-        expect(rangeOf(timeout).start.character).toBe(4);
-        expect(rangeOf(timeout).end.character).toBe(8);
+        expect(rangeOf(timeout).start.character).toBe(3);
+        expect(rangeOf(timeout).end.character).toBe(7);
     });
 
     it('is empty when nothing was typed yet', () => {
-        const text = 'tests:\n  - cmd: echo hi\n    \n';
-        const items = complete(text, 2, 4)!;
+        const text = 'tests:\n\t- cmd: echo hi\n\t  \n';
+        const items = complete(text, 2, 3)!;
         const desc = items.find(i => i.label === 'desc')!;
-        expect(rangeOf(desc).start.character).toBe(4);
-        expect(rangeOf(desc).end.character).toBe(4);
+        expect(rangeOf(desc).start.character).toBe(3);
+        expect(rangeOf(desc).end.character).toBe(3);
     });
 });
 
@@ -189,19 +190,56 @@ describe('snippets generate files the validator accepts', () => {
     });
 
     it('every tests-array snippet produces a valid test entry', () => {
-        // "tests:\n  - " puts the cursor in the tests-array context
-        const items = complete('tests:\n  - ', 1, 4)!;
+        // "tests:\n\t- " puts the cursor in the tests-array context
+        const items = complete('tests:\n\t- ', 1, 3)!;
         const snippets = items.filter(i => i.kind === 14 /* Snippet */);
         expect(snippets.map(s => s.label)).toEqual(['test', 'test-input', 'test-stdin']);
 
         for (const snippet of snippets) {
             const expanded = expandSnippet(insertTextOf(snippet));
-            // simulate acceptance on a fresh line indented two spaces under tests:
-            const file = 'tests:\n' + insertAtIndent(expanded, 2) + '\n';
+            // simulate acceptance on a fresh line one tab deep under tests:
+            const file = 'tests:\n' + insertAtIndent(expanded, '\t') + '\n';
             expect(
                 validateDatsDocument({ getText: () => file } as any),
                 `snippet "${snippet.label}" generated:\n${file}`
             ).toEqual([]);
         }
+    });
+});
+
+describe('file-level completion contexts', () => {
+    it('offers the file-level keys at the root', () => {
+        const labels = complete('', 0, 0)!.map(i => i.label);
+        for (const key of ['tests', 'shared', 'setup', 'teardown', 'sandbox']) {
+            expect(labels, key).toContain(key);
+        }
+    });
+
+    it('offers sandbox keys inside the sandbox block', () => {
+        const text = 'sandbox:\n\tenabled: true\n\t\ntests:\n\t- cmd: echo hi\n';
+        const labels = complete(text, 2, 1)!.map(i => i.label);
+        expect(labels).toEqual(expect.arrayContaining(['network', 'image']));
+        expect(labels).not.toContain('enabled'); // already present
+    });
+
+    it('offers files/copy inside shared', () => {
+        const text = 'shared:\n\tfiles:\n\t\ta.txt: hi\n\t\ntests:\n\t- cmd: echo hi\n';
+        const labels = complete(text, 3, 1)!.map(i => i.label);
+        expect(labels).toContain('copy');
+        expect(labels).not.toContain('files'); // already present
+    });
+
+    it('offers hook entry keys inside a setup mapping item', () => {
+        const text = 'setup:\n\t- cmd: echo a\n\t  \ntests:\n\t- cmd: echo hi\n';
+        const labels = complete(text, 2, 3)!.map(i => i.label);
+        expect(labels).toEqual(expect.arrayContaining(['env', 'stdin_file', 'timeout']));
+        expect(labels).not.toContain('cmd'); // already present
+    });
+
+    it('offers copy alongside files inside inputs', () => {
+        const text = 'tests:\n\t- cmd: echo hi\n\t  inputs:\n\t\tstdin: hi\n\t\t\n';
+        const labels = complete(text, 4, 2)!.map(i => i.label);
+        expect(labels).toEqual(expect.arrayContaining(['files', 'copy']));
+        expect(labels).not.toContain('stdin'); // already present
     });
 });

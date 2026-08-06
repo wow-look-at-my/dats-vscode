@@ -8,12 +8,44 @@
   "injections": {
     "L:source.dats": {
       "patterns": [
+        { "include": "#hook-command-line" },
+        { "include": "#dialect" },
         { "include": "#cmd-line" },
         { "include": "#placeholders" }
       ]
     }
   },
   "repository": {
+    "dialect": {
+      "comment": "The runner's YAML dialect indents with tabs and has no tags, and the built-in YAML grammar knows neither: on its own it scopes a tab-indented \"- \" invalid.illegal.unrecognized.yaml and reads a bare negated key (!stdout) as a tag shorthand. Re-scope both as what they are.",
+      "patterns": [
+        {
+          "match": "(?<=^\\t*|^\\t*-[ \\t]+)(![A-Za-z_][A-Za-z0-9_.-]*)(:)(?=[ \\t]|$)",
+          "captures": {
+            "1": { "name": "entity.name.tag.yaml" },
+            "2": { "name": "punctuation.separator.key-value.yaml" }
+          }
+        },
+        {
+          "match": "^\\t+(-)(?=[ \\t]|$)",
+          "captures": {
+            "1": { "name": "punctuation.definition.block.sequence.item.yaml" }
+          }
+        }
+      ]
+    },
+    "hook-command-line": {
+      "comment": "A bare sequence item at the first level is a setup/teardown command -- the only shell text outside a cmd: line. A test item is a mapping (- cmd: ...), which the lookahead skips, and a pattern list sits deeper than one tab.",
+      "begin": "^\\t(-)[ \\t]+(?![^\\s:]+:)(?!-)([a-zA-Z0-9_./+-]+)?",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.block.sequence.item.yaml" },
+        "2": { "name": "entity.name.function.shell" }
+      },
+      "end": "$",
+      "patterns": [
+        { "include": "#shell-command" }
+      ]
+    },
     "cmd-line": {
       "comment": "Match cmd: <value> and highlight value as shell command. The negative lookahead leaves block scalars (cmd: | / cmd: >) to the YAML grammar.",
       "begin": "(?<=^[ \\t]*|^[ \\t]*-[ \\t]+)(cmd)(:)(?![ \\t]*[|>][-+0-9]*[ \\t]*(?:#.*)?$)",
@@ -142,6 +174,15 @@
         {
           "name": "variable.parameter.dats",
           "match": "\\{outputs\\.[^}]+\\}"
+        },
+        {
+          "name": "variable.parameter.dats",
+          "match": "\\{shared\\.[^}]+\\}"
+        },
+        {
+          "comment": "Substituted a layer earlier than the others, at matrix expansion time.",
+          "name": "variable.other.matrix.dats",
+          "match": "\\{matrix\\.[^}]*\\}"
         }
       ]
     }

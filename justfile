@@ -28,3 +28,14 @@ _compile: _deps && test typecheck
 
 _deps:
     pnpm install
+
+# Re-record testdata/corpus verdicts with the real dats CLI (see docs/dialect.md)
+corpus:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    command -v dats >/dev/null || { echo "install the dats CLI first: curl -fL https://dl.pazer.build/dats?os=linux&arch=amd64 -o /usr/local/bin/dats && chmod +x /usr/local/bin/dats" >&2; exit 1; }
+    cd testdata/corpus
+    for f in *.dats; do
+        if dats syntax "$f" >/dev/null 2>&1; then echo "$f ACCEPT"; else echo "$f REJECT"; fi
+    done > verdicts.txt
+    echo "re-recorded $(wc -l < verdicts.txt) verdicts"
