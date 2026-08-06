@@ -10,33 +10,33 @@ DATS is a declarative YAML format for defining command-line tests, executed nati
 - Inline diagnostics from a built-in validator that mirrors the runner's strict parsing: unknown keys, missing/empty `cmd`, exit code and timeout validation, output check and `outputs.snapshot` shapes, `no tests defined`, file-level `setup`/`teardown`/`shared` and per-test `matrix` validation
 - Context-aware completions for test keys, whole-test snippets, and `{inputs.X}` / `{outputs.X}` placeholders (suggesting the files declared in the current test)
 - Hover documentation for test fields
+- Understands the runner's YAML dialect: tab indentation and bare `!stdout` / `!stderr` / `!files` keys
 
 ## Example
 
 ```yaml
 tests:
-  - desc: echo test
-    cmd: echo Hello World
-    outputs:
-      stdout:
-        - "Hello World"
+	- desc: echo test
+	  cmd: echo Hello World
+	  outputs:
+		stdout:
+			- "Hello World"
 
-  - desc: cat reads file
-    inputs:
-      files:
-        input.txt: |
-          Hello, world!
-    cmd: cat {inputs.input.txt}
-    outputs:
-      stdout:
-        - "Hello, world!"
+	- desc: no error on the happy path
+	  cmd: echo Hello World
+	  outputs:
+		!stdout:
+			- "error"
 
-  - desc: grep returns 1 when not found
-    exit: 1
-    inputs:
-      stdin: "hello world"
-    cmd: grep -q "notfound"
+	- desc: grep returns 1 when not found
+	  exit: 1
+	  inputs:
+		stdin: "hello world"
+	  cmd: grep -q "notfound"
 ```
+
+Indentation is tabs -- one per level, spaces only to align past a `- ` marker -- and the
+negated keys (`!stdout`, `!stderr`, `!files`) are written bare.
 
 ## Requirements
 

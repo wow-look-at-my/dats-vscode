@@ -267,3 +267,25 @@ describe('dats grammar injection over the built-in YAML grammar', () => {
         }
     });
 });
+
+describe('the dats dialect (tabs, bare negated keys)', () => {
+    it('scopes tab-indented sequence items as sequence items, not illegal text', () => {
+        const tokens = tokenize(['tests:', '\t- cmd: echo hi', '\t  outputs:', '\t\tstdout:', '\t\t\t- hi']);
+
+        // the built-in YAML grammar only knows space indentation and scopes
+        // these dashes invalid.illegal.unrecognized.yaml on its own
+        expect(scopesOf(tokens, 4, '-')).toContain('punctuation.definition.block.sequence.item.yaml');
+        expect(scopesOf(tokens, 4, '-')).not.toContain('invalid.illegal.unrecognized.yaml');
+        // the shell rules still reach a cmd line under a tab-indented dash
+        expect(scopesOf(tokens, 1, 'echo')).toContain('entity.name.function.shell');
+    });
+
+    it('scopes bare negated keys as keys, not as a tag shorthand', () => {
+        const tokens = tokenize(['tests:', '\t- cmd: echo hi', '\t  outputs:', '\t\t!stdout:', '\t\t\t- boom', '\t\t!files:', '\t\t\tstray.txt:']);
+
+        for (const [line, key] of [[3, '!stdout'], [5, '!files']] as const) {
+            expect(scopesOf(tokens, line, key)).toContain('entity.name.tag.yaml');
+            expect(scopesOf(tokens, line, key)).not.toContain('storage.type.tag.shorthand.yaml');
+        }
+    });
+});

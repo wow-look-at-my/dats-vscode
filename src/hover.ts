@@ -101,8 +101,8 @@ export class DatsHoverProvider implements vscode.HoverProvider {
         const beforeWord = line.substring(0, wordRange.start.character);
 
         // Is this a key? (has colon after, and is at start of meaningful content)
-        // Keys like "!stdout" must be quoted in YAML, so allow a closing quote
-        // between the word and the colon, and an opening quote before the word.
+        // Negated keys are written bare (!stdout) but the quoted spelling still
+        // parses, so allow a quote on either side of the word.
         const isKey = afterWord.match(/^"?\s*:/) && beforeWord.match(/^[\s-]*"?$/);
 
         if (!isKey) return undefined;

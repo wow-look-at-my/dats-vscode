@@ -87,6 +87,13 @@ describe('DatsHoverProvider', () => {
         expect(filesText).toContain('must NOT exist');
     });
 
+    it('shows docs for bare !stdout, !stderr and !files keys', () => {
+        const lines = ['\t  outputs:', '\t\t!stdout:', '\t\t\t- "error"', '\t\t!stderr:', '\t\t\t- "fatal"', '\t\t!files:', '\t\t\tjunk.txt:'];
+        expect(hoverText(lines, 1, 4)).toContain('**!stdout**');
+        expect(hoverText(lines, 3, 4)).toContain('**!stderr**');
+        expect(hoverText(lines, 5, 4)).toContain('**!files**');
+    });
+
     it('describes pattern lists as literal substrings, not regexes', () => {
         const text = hoverText(['      stdout:'], 0, 8);
         expect(text).toContain('literal substrings');

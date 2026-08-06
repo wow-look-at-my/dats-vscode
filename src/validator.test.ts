@@ -899,3 +899,50 @@ describe('outputs.snapshot', () => {
         expect(diags[0].message).toBe('Unknown property "snapshot" (dats will refuse to run this file)');
     });
 });
+
+// The `.dats` dialect: tab indentation and bare "!stdout"-style keys. These
+// files are what the CLI actually accepts, so they must validate clean.
+describe('tab-indented dialect', () => {
+    it('accepts a tab-indented file with bare negated keys', () => {
+        const dats =
+            'shared:\n' +
+            '\tfiles:\n' +
+            '\t\tconfig.json: |\n' +
+            '\t\t\t{"debug": true}\n' +
+            'setup:\n' +
+            '\t- cat {shared.config.json}\n' +
+            'tests:\n' +
+            '\t- desc: hello\n' +
+            '\t  cmd: echo hi\n' +
+            '\t  inputs:\n' +
+            '\t\tfiles:\n' +
+            '\t\t\tin.txt: content\n' +
+            '\t  outputs:\n' +
+            '\t\tstdout:\n' +
+            '\t\t\t- hi\n' +
+            '\t\t!stdout:\n' +
+            '\t\t\t- boom\n' +
+            '\t\t!stderr:\n' +
+            '\t\t\t0: "^never$"\n' +
+            '\t\t!files:\n' +
+            '\t\t\tstray.txt:\n' +
+            '\t\t\t\texists: true\n';
+        expect(validate(dats)).toEqual([]);
+    });
+
+    it('reports a diagnostic where the source actually says it', () => {
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  bogus: 1\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('Unknown property "bogus" (dats will refuse to run this file)');
+        // "\t  bogus" -- the key starts at column 3 of line 2, tabs counted as
+        // the single characters they are.
+        const range = diags[0].range as any;
+        expect([range.startLine, range.startCharacter]).toEqual([2, 3]);
+    });
+
+    it('validates inside a negated file check written bare', () => {
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\t!files:\n\t\t\t../escape.txt:\n\t\t\t\texists: true\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toContain('must be a relative path that stays inside the test directory');
+    });
+});

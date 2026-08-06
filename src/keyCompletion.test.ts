@@ -93,10 +93,9 @@ function expandSnippet(snippet: string): string {
         .replace(/\$(\d+)/g, (_m, index) => defaults[index] ?? '');
 }
 
-/** Simulates accepting a snippet on a line indented by `indent` spaces: VS Code
- *  prepends the current line's indentation to every continuation line. */
-function insertAtIndent(expanded: string, indent: number): string {
-    const pad = ' '.repeat(indent);
+/** Simulates accepting a snippet on a line indented by `pad`: VS Code prepends
+ *  the current line's indentation to every continuation line. */
+function insertAtIndent(expanded: string, pad: string): string {
     return expanded
         .split('\n')
         .map(line => pad + line)
@@ -136,16 +135,17 @@ describe('context-aware key completion', () => {
     });
 
     it('uses relative continuation indentation in multi-line insert texts', () => {
-        const text = 'tests:\n  - cmd: echo hi\n    outputs:\n      stdout:\n        - "x"\n';
-        const items = complete(text, 3, 6)!;
+        const text = 'tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tstdout:\n\t\t\t- "x"\n';
+        const items = complete(text, 3, 2)!;
         const stderr = items.find(i => i.label === 'stderr')!;
         // snippet whitespace normalization adds the line indent; the text itself
-        // must not hardcode an absolute depth
-        expect(insertTextOf(stderr)).toBe('stderr:\n  - ');
+        // must not hardcode an absolute depth. A level is one tab, not spaces.
+        expect(insertTextOf(stderr)).toBe('stderr:\n\t- ');
         expect(stderr.insertText).toBeInstanceOf(SnippetString);
 
+        // Negated keys go in bare -- yaml-fixed has no tags to confuse them with
         const negated = items.find(i => i.label === '!stdout')!;
-        expect(insertTextOf(negated)).toBe('"!stdout":\n  - ');
+        expect(insertTextOf(negated)).toBe('!stdout:\n\t- ');
     });
 });
 
@@ -189,15 +189,15 @@ describe('snippets generate files the validator accepts', () => {
     });
 
     it('every tests-array snippet produces a valid test entry', () => {
-        // "tests:\n  - " puts the cursor in the tests-array context
-        const items = complete('tests:\n  - ', 1, 4)!;
+        // "tests:\n\t- " puts the cursor in the tests-array context
+        const items = complete('tests:\n\t- ', 1, 3)!;
         const snippets = items.filter(i => i.kind === 14 /* Snippet */);
         expect(snippets.map(s => s.label)).toEqual(['test', 'test-input', 'test-stdin']);
 
         for (const snippet of snippets) {
             const expanded = expandSnippet(insertTextOf(snippet));
-            // simulate acceptance on a fresh line indented two spaces under tests:
-            const file = 'tests:\n' + insertAtIndent(expanded, 2) + '\n';
+            // simulate acceptance on a fresh line one tab deep under tests:
+            const file = 'tests:\n' + insertAtIndent(expanded, '\t') + '\n';
             expect(
                 validateDatsDocument({ getText: () => file } as any),
                 `snippet "${snippet.label}" generated:\n${file}`

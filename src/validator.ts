@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { parseDocument, isMap, isSeq, Scalar, YAMLMap, LineCounter } from 'yaml';
+import { normalizeDats, DialectSource } from './dialect';
 
 // The dats runner resolves only these two exit code names; any other EXIT_*
 // string is rejected at parse time.
@@ -78,16 +79,22 @@ function findMatrixPlaceholder(s: string): string | undefined {
 export function validateDatsDocument(document: vscode.TextDocument): vscode.Diagnostic[] {
     const diagnostics: vscode.Diagnostic[] = [];
     const text = document.getText();
-    const lineCounter = new LineCounter();
+    const parseCounter = new LineCounter();
 
+    // yaml parses standard YAML, so the tab indentation and bare "!stdout:"
+    // keys of the dialect have to be rewritten first; every position the parser
+    // reports then comes back through the mapper.
+    const source = normalizeDats(text);
     // parseDocument does not throw on malformed input; it reports via doc.errors
-    const doc = parseDocument(text, { lineCounter });
+    const doc = parseDocument(source.text, { lineCounter: parseCounter });
+    const lineCounter = sourceLineCounter(parseCounter, source);
 
     // Check for YAML parse errors
     for (const error of doc.errors) {
         const pos = error.linePos?.[0];
         if (pos) {
-            const range = new vscode.Range(pos.line - 1, pos.col - 1, pos.line - 1, pos.col + 10);
+            const col = source.toSourceCol(pos.line - 1, pos.col - 1);
+            const range = new vscode.Range(pos.line - 1, col, pos.line - 1, col + 11);
             diagnostics.push(new vscode.Diagnostic(range, error.message, vscode.DiagnosticSeverity.Error));
         }
     }
@@ -785,6 +792,20 @@ function validateFileCheck(fileCheck: YAMLMap, lineCounter: LineCounter, documen
             diagnostics.push(new vscode.Diagnostic(range, `Unknown file check property "${key.value}"${UNKNOWN_KEY_SUFFIX}`, vscode.DiagnosticSeverity.Error));
         }
     }
+}
+
+// The parser counts lines in the normalized text, so its columns are the
+// normalized ones. Wrapping linePos (nodeRange's only use of the counter) puts
+// every range back on the source columns without threading the mapper through
+// every validate* signature.
+function sourceLineCounter(counter: LineCounter, source: DialectSource): LineCounter {
+    return {
+        ...counter,
+        linePos: (offset: number) => {
+            const pos = counter.linePos(offset);
+            return { line: pos.line, col: source.toSourceCol(pos.line - 1, pos.col - 1) + 1 };
+        },
+    } as LineCounter;
 }
 
 function nodeRange(node: any, lineCounter: LineCounter, document: vscode.TextDocument): vscode.Range {
