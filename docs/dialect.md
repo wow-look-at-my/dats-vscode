@@ -66,10 +66,22 @@ the content starts.
   individually, so a range in the middle of such a value can drift by the number of
   quotes before it. The diagnostic still lands on the right line and value.
 
-## Indentation itself
+## Rules the yaml parser is too permissive for
 
-Indentation is checked before any of this, by `firstIndentationError`, which
-mirrors yaml-fixed's `measure`: leading spaces with no tab, or a tab after alignment
-spaces, is the CLI's first parse error and is reported as a diagnostic (once, like the
-CLI). The rewrite still runs afterwards, so a space-indented file gets its other
-diagnostics too -- read as ordinary YAML, which is what it is.
+Two dialect rules have no equivalent in standard YAML, so the extension checks them
+itself rather than waiting for a parse error that never comes.
+
+### Indentation
+
+`firstIndentationError` mirrors yaml-fixed's `measure`: leading spaces with no tab, or a
+tab after alignment spaces, is the CLI's first parse error and is reported as a
+diagnostic (once, like the CLI). The rewrite still runs afterwards, so a space-indented
+file gets its other diagnostics too -- read as ordinary YAML, which is what it is.
+
+### Flow collections
+
+The block parser reads one line at a time, so a flow collection has to close on the line
+that opens it: `stdout: [` continued on the next line is `unexpected end of flow value`
+to the runner and a perfectly ordinary multi-line list to the `yaml` package. The rewrite
+reports it as `flowError`, and only for a value that STARTS with `[` or `{` -- a bracket
+inside shell text (`awk "{print $1}"`) is not a flow collection.

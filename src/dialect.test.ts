@@ -155,3 +155,17 @@ describe('normalizeDats', () => {
         expect(source.toSourceCol(bangLine, normalized.indexOf(':'))).toBe(dats.split('\n')[bangLine].indexOf(':'));
     });
 });
+
+describe('unclosed flow collections', () => {
+    it('reports a flow value left open at the end of its line', () => {
+        const source = normalizeDats('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tstdout: [\n\t\t\thi]\n');
+        expect(source.flowError?.line).toBe(3);
+        expect(source.flowError?.message).toBe('unexpected end of flow value');
+    });
+
+    it('says nothing about a flow that closes, or a bracket in shell text', () => {
+        expect(normalizeDats('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tstdout: [hi, there]\n').flowError).toBeUndefined();
+        expect(normalizeDats('tests:\n\t- cmd: echo "[unclosed"\n').flowError).toBeUndefined();
+        expect(normalizeDats('tests:\n\t- cmd: awk "{print $1}" f\n').flowError).toBeUndefined();
+    });
+});

@@ -21,6 +21,7 @@ bad-matrix-emptylist.dats REJECT
 bad-matrix-undeclared.dats REJECT
 bad-missing-cmd.dats REJECT
 bad-multidoc.dats REJECT
+bad-multiline-flow.dats REJECT
 bad-no-tests.dats REJECT
 bad-outputs-both-forms.dats REJECT
 bad-sandbox-empty.dats REJECT
@@ -44,6 +45,7 @@ ok-blockscalar.dats ACCEPT
 ok-comment.dats ACCEPT
 ok-env.dats ACCEPT
 ok-exit-quoted.dats ACCEPT
+ok-flow-and-brackets.dats ACCEPT
 ok-flow.dats ACCEPT
 ok-full-outputs.dats ACCEPT
 ok-full.dats ACCEPT

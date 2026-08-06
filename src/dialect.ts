@@ -15,6 +15,12 @@
 export interface DialectSource {
     /** Standard-YAML text, same number of lines as the input. */
     text: string;
+    /**
+     * The first flow collection left open at the end of its line, if any. The
+     * block parser reads one line at a time, so `stdout: [` continued on the
+     * next line is where the CLI stops -- the `yaml` package would accept it.
+     */
+    flowError?: DialectError;
     /** Maps a 0-based column in the normalized text back to the source column. */
     toSourceCol(line: number, col: number): number;
     /** Offset in the normalized text of a 0-based source (line, col). */
@@ -47,8 +53,8 @@ const VALUE_DASH = /^-(\s|$)/;
 // optional comment): its body lines are content, not structure.
 const BLOCK_SCALAR_HEADER = /^[|>][-+0-9]*\s*(#.*)?$/;
 
-/** Where a line breaks the dialect's indentation rule, and what to say about it. */
-export interface IndentationError {
+/** Where a line breaks a dialect rule, and what to say about it. */
+export interface DialectError {
     line: number;
     col: number;
     endCol: number;
@@ -59,7 +65,7 @@ export interface IndentationError {
 // lines included -- and fails on the first offender: depth is leading TABS, and
 // spaces may only ALIGN after them. A line that is nothing but whitespace has no
 // indentation to judge. Reports the first error only, like the CLI.
-export function firstIndentationError(text: string): IndentationError | undefined {
+export function firstIndentationError(text: string): DialectError | undefined {
     const lines = text.split(/\r?\n/);
     for (let line = 0; line < lines.length; line++) {
         const indent = /^(\t*)( *)/.exec(lines[line])!;
@@ -103,6 +109,7 @@ export function normalizeDats(text: string): DialectSource {
     // Depth of the key holding the block scalar being read, if any: every
     // deeper line is its body and is passed through untouched.
     let blockScalarDepth: number | undefined;
+    let flowError: DialectError | undefined;
 
     for (const line of lines) {
         const indent = /^(\t*)( *)/.exec(line)!;
@@ -164,6 +171,15 @@ export function normalizeDats(text: string): DialectSource {
         } else {
             const holdsBlockScalar = rewriteContent(content, rewrite);
             if (holdsBlockScalar) blockScalarDepth = depth;
+            const open = unclosedFlowColumn(content);
+            if (open !== undefined && !flowError) {
+                flowError = {
+                    line: out.length,
+                    col: sourceStart + open,
+                    endCol: line.length,
+                    message: 'unexpected end of flow value',
+                };
+            }
         }
 
         out.push(rewrite.text);
@@ -195,7 +211,7 @@ export function normalizeDats(text: string): DialectSource {
         return col + delta;
     };
 
-    return { text: normalized, toSourceCol, toNormalizedOffset: offsetAt(normalized, toNormalizedCol) };
+    return { text: normalized, flowError, toSourceCol, toNormalizedOffset: offsetAt(normalized, toNormalizedCol) };
 }
 
 // Builds one rewritten line, recording a shift wherever a piece is emitted at a
@@ -229,6 +245,47 @@ class LineRewrite {
     }
 }
 
+// Where a flow collection opens on this line and is still open at the end of
+// it, or undefined. Only a value (or a sequence item) that STARTS with "[" or
+// "{" is a flow collection; a bracket inside shell text is not.
+function unclosedFlowColumn(content: string): number | undefined {
+    const mapping = splitMapping(content);
+    let value = content;
+    let column = 0;
+    if (mapping) {
+        column = mapping.key.length + mapping.separator.length;
+        value = mapping.value;
+    } else {
+        const dash = /^-\s+/.exec(content);
+        if (!dash) return undefined;
+        column = dash[0].length;
+        value = content.slice(dash[0].length);
+    }
+    if (value === '' || (value[0] !== '[' && value[0] !== '{')) return undefined;
+
+    let depth = 0;
+    let inSingle = false;
+    let inDouble = false;
+    for (let i = 0; i < value.length; i++) {
+        const c = value[i];
+        if (inSingle) {
+            if (c === "'") inSingle = false;
+        } else if (inDouble) {
+            if (c === '\\') i++;
+            else if (c === '"') inDouble = false;
+        } else if (c === "'") {
+            inSingle = true;
+        } else if (c === '"') {
+            inDouble = true;
+        } else if (c === '[' || c === '{') {
+            depth++;
+        } else if (c === ']' || c === '}') {
+            depth--;
+        }
+    }
+    return depth > 0 ? column : undefined;
+}
+
 // Rewrites one structural line into standard YAML, reporting whether its value
 // opens a block scalar (whose body the caller must then pass through).
 function rewriteContent(content: string, rewrite: LineRewrite): boolean {
@@ -244,8 +301,12 @@ function rewriteContent(content: string, rewrite: LineRewrite): boolean {
 
     const mapping = splitMapping(rest);
     if (!mapping) {
-        // A sequence item's own scalar, e.g. "- rm -f out"
-        emitValue(rest, rewrite, false);
+        // A sequence item's own scalar, e.g. "- rm -f out". A line that is
+        // neither an item nor a mapping entry is not something this pass
+        // understands (yaml-fixed would reject it too), so it goes out as
+        // written rather than being quoted on a guess.
+        if (dash) emitValue(rest, rewrite, false);
+        else rewrite.keep(rest);
         return false;
     }
 

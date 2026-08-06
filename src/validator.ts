@@ -102,6 +102,12 @@ export function validateDatsDocument(document: vscode.TextDocument): vscode.Diag
     // keys of the dialect have to be rewritten first; every position the parser
     // reports then comes back through the mapper.
     const source = normalizeDats(text);
+    if (source.flowError) {
+        const range = new vscode.Range(source.flowError.line, source.flowError.col, source.flowError.line, source.flowError.endCol);
+        // Mirrors the CLI's parse error: the block parser reads a line at a time
+        diagnostics.push(new vscode.Diagnostic(range, source.flowError.message, vscode.DiagnosticSeverity.Error));
+    }
+
     // parseDocument does not throw on malformed input; it reports via doc.errors
     const doc = parseDocument(source.text, { lineCounter: parseCounter });
     const lineCounter = sourceLineCounter(parseCounter, source);
