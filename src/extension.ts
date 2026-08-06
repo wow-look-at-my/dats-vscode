@@ -1,5 +1,13 @@
 import * as vscode from 'vscode';
-import { findTestRange, findInputs, findOutputs, matchInputsPlaceholder, matchOutputsPlaceholder } from './parser';
+import {
+    findTestRange,
+    findInputs,
+    findOutputs,
+    findShared,
+    matchInputsPlaceholder,
+    matchOutputsPlaceholder,
+    matchSharedPlaceholder,
+} from './parser';
 import { validateDatsDocument } from './validator';
 import { DatsHoverProvider } from './hover';
 import { DatsKeyCompletionProvider } from './keyCompletion';
@@ -68,6 +76,13 @@ class DatsCompletionProvider implements vscode.CompletionItemProvider {
             return this.createCompletions(outputs, outputsPrefix, 'output');
         }
 
+        // {shared.X} is file-level: it resolves anywhere in the file, hooks
+        // and shared file contents included
+        const sharedPrefix = matchSharedPlaceholder(textBeforeCursor);
+        if (sharedPrefix !== undefined) {
+            return this.createCompletions(findShared(document.getText().split('\n')), sharedPrefix, 'shared');
+        }
+
         // Check if we just typed { - suggest {inputs.X} and {outputs.X} with known files
         if (textBeforeCursor.endsWith('{')) {
             const completions: vscode.CompletionItem[] = [];
@@ -100,19 +115,29 @@ class DatsCompletionProvider implements vscode.CompletionItemProvider {
                 completions.push(item);
             }
 
+            // Add the file's shared fixtures, usable from any test
+            for (const shared of findShared(document.getText().split('\n'))) {
+                const item = new vscode.CompletionItem(`{shared.${shared}}`, vscode.CompletionItemKind.Variable);
+                item.insertText = `shared.${shared}}`;
+                item.detail = 'shared file';
+                item.documentation = `Reference to shared file "${shared}"`;
+                item.sortText = '2' + shared; // after the test's own inputs and outputs
+                completions.push(item);
+            }
+
             // Add generic snippets if no specific files found
             if (inputs.length === 0) {
                 const item = new vscode.CompletionItem('{inputs.}', vscode.CompletionItemKind.Snippet);
                 item.insertText = new vscode.SnippetString('inputs.${1:filename}}');
                 item.detail = 'Reference an input file';
-                item.sortText = '2inputs';
+                item.sortText = '3inputs';
                 completions.push(item);
             }
             if (outputs.length === 0) {
                 const item = new vscode.CompletionItem('{outputs.}', vscode.CompletionItemKind.Snippet);
                 item.insertText = new vscode.SnippetString('outputs.${1:filename}}');
                 item.detail = 'Reference an output file';
-                item.sortText = '2outputs';
+                item.sortText = '3outputs';
                 completions.push(item);
             }
 
@@ -125,7 +150,7 @@ class DatsCompletionProvider implements vscode.CompletionItemProvider {
     private createCompletions(
         names: string[],
         prefix: string,
-        type: 'input' | 'output'
+        type: 'input' | 'output' | 'shared'
     ): vscode.CompletionItem[] {
         return names
             .filter(name => name.startsWith(prefix))

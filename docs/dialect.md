@@ -2,8 +2,8 @@
 
 `.dats` files are parsed by the runner with
 [yaml-fixed](https://github.com/wow-look-at-my/yaml-fixed), not a general-purpose YAML
-library. Two of its differences make a real file unparseable by the `yaml` package this
-extension is built on:
+library. Three of its differences make a real file unparseable -- or, worse, silently
+mis-parsed -- by the `yaml` package this extension is built on:
 
 - **Structural depth is a count of leading TABS.** Standard YAML rejects tabs as
   indentation outright, so every line of a valid `.dats` file is a parse error
@@ -13,6 +13,9 @@ extension is built on:
   written bare (`!stdout:`, `!stderr:`, `!files:`). Standard YAML reads that as a tag on
   the following node, which is worse than an error: the key silently disappears and the
   block under it becomes the value of its parent.
+- **A plain value runs to the end of its line.** `cmd` holds shell text, so a colon in it
+  is ordinary -- `cmd: echo '{"ok": true}'` is one string to the runner. Standard YAML
+  re-reads the `": "` inside it and reports a nested mapping where the file has a command.
 
 `src/dialect.ts` (`normalizeDats`) rewrites a source file into the equivalent standard
 YAML before either the validator or the completion provider parses it.
@@ -25,8 +28,14 @@ One output line per input line, so line numbers never move. Per line:
 2. Emit the content at a column derived from depth: each level costs two columns, and a
    level holding a sequence costs two more, so a child clears its item's body column
    (`- ` included). A non-dash line at a sequence's own depth is that item's body and is
-   emitted two columns in.
-3. Quote a bare `!key:` at the start of the content, so the parser reads a key.
+   emitted two columns in. An indented but empty line keeps its indentation: that is
+   where the next key gets typed, and completion decides context by where the cursor is.
+3. Quote a bare `!key`, so the parser reads a key rather than a tag.
+4. Quote a value standard YAML would read as something other than the whole value: one
+   holding a `": "` or ending in `:`, or opening with an indicator character (`!`, `&`,
+   `*`, ...). A trailing `# comment` stays outside the quotes -- both parsers treat it as
+   a comment. A block scalar header (`|`, `>`) is left alone, and every line of its body
+   is passed through untouched, colons and dashes included.
 
 The mapping from depth to column is strictly increasing, which is the property that makes
 the rewrite faithful: any line deeper in the source is more indented in the output, so the
@@ -40,22 +49,22 @@ file, but this pass cannot place its lines, so it lets the `yaml` parser judge i
 `toSourceCol(line, col)` puts a parser position back on the source column, and
 `toNormalizedOffset(line, col)` converts a cursor position the other way (the completion
 provider compares the cursor against node ranges). Both are driven by the same per-line
-list of breakpoints, recorded while the line is rewritten: one where the content starts,
-and two more around an inserted quote pair.
+list of breakpoints: the line is emitted piece by piece, and a breakpoint is recorded
+wherever a piece went out at a different width than it was written -- the indentation
+first, then each quote a key or value gained.
 
 A position inside the rewritten indentation has no exact source column; it maps to where
 the content starts.
 
 ## What it does not do
 
-- **Block scalar bodies are reindented like everything else.** Their leading whitespace
-  shifts by the same rule, so a `|` body's content is not byte-identical to the source.
-  Nothing in the validator inspects that whitespace.
-- **Only a `!` starting a KEY is quoted, not one starting a value.** `cmd: ! grep foo` is a
-  plain string to the runner; the `yaml` parser reads the `!` as a tag and hands the
-  validator `grep foo`. That is silent and harmless (no diagnostic either way) except for
-  a value that is nothing but `!`, which arrives as null. Quoting values would mean
-  deciding where a trailing `# comment` ends, which is not worth it for that.
+- **Block scalar bodies are reindented.** Their content is passed through, but the
+  leading whitespace shifts with the block, so a `|` body's string is not byte-identical
+  to the source. Nothing in the validator inspects that whitespace.
+- **A column inside a quoted value can be off by one or two.** The mapper records a shift
+  at each end of an inserted quote pair; a doubled `'` inside the value is not tracked
+  individually, so a range in the middle of such a value can drift by the number of
+  quotes before it. The diagnostic still lands on the right line and value.
 - **It does not flag space indentation.** The runner rejects a space-indented file; the
   extension parses it as ordinary YAML and reports whatever it finds there. That gap is
   intentional (existing space-indented files still validate as before), not an oversight.

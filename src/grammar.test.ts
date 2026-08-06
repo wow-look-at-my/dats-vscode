@@ -203,13 +203,9 @@ describe('dats grammar injection over the built-in YAML grammar', () => {
         expect(scopesOf(tokens, 6, 'cat')).toContain('entity.name.function.shell');
         expect(scopesOf(tokens, 6, 'echo')).toContain('entity.name.function.shell');
 
-        // {shared.X}/{matrix.X} are ordinary shell arguments, not dats
-        // placeholders -- highlighting them is a documented cosmetic gap
-        for (const placeholder of ['{shared.cfg.json}', '{matrix.word}']) {
-            const scopes = scopesOf(tokens, 6, placeholder);
-            expect(scopes).toContain('string.unquoted.argument.shell');
-            expect(scopes).not.toContain('variable.parameter.dats');
-        }
+        // {shared.X}/{matrix.X} are placeholders inside a shell argument
+        expect(scopesOf(tokens, 6, '{shared.cfg.json}')).toContain('variable.parameter.dats');
+        expect(scopesOf(tokens, 6, '{matrix.word}')).toContain('variable.other.matrix.dats');
     });
 
     it('tokenizes snapshot-format files (outputs.snapshot) without breaking', () => {
@@ -278,6 +274,19 @@ describe('the dats dialect (tabs, bare negated keys)', () => {
         expect(scopesOf(tokens, 4, '-')).not.toContain('invalid.illegal.unrecognized.yaml');
         // the shell rules still reach a cmd line under a tab-indented dash
         expect(scopesOf(tokens, 1, 'echo')).toContain('entity.name.function.shell');
+    });
+
+    it('scopes {shared.X} and {matrix.X} placeholders too', () => {
+        const tokens = tokenize([
+            'shared:',
+            '\tfiles:',
+            '\t\tcfg.json: "{}"',
+            'tests:',
+            '\t- cmd: cat {shared.cfg.json} {matrix.name}',
+        ]);
+
+        expect(scopesOf(tokens, 4, '{shared.cfg.json}')).toContain('variable.parameter.dats');
+        expect(scopesOf(tokens, 4, '{matrix.name}')).toContain('variable.other.matrix.dats');
     });
 
     it('scopes bare negated keys as keys, not as a tag shorthand', () => {

@@ -161,6 +161,15 @@
         {
           "name": "variable.parameter.dats",
           "match": "\\{outputs\\.[^}]+\\}"
+        },
+        {
+          "name": "variable.parameter.dats",
+          "match": "\\{shared\\.[^}]+\\}"
+        },
+        {
+          "comment": "Substituted a layer earlier than the others, at matrix expansion time.",
+          "name": "variable.other.matrix.dats",
+          "match": "\\{matrix\\.[^}]*\\}"
         }
       ]
     }
