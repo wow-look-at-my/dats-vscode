@@ -205,3 +205,40 @@ describe('snippets generate files the validator accepts', () => {
         }
     });
 });
+
+describe('file-level completion contexts', () => {
+    it('offers the file-level keys at the root', () => {
+        const labels = complete('', 0, 0)!.map(i => i.label);
+        for (const key of ['tests', 'shared', 'setup', 'teardown', 'sandbox']) {
+            expect(labels, key).toContain(key);
+        }
+    });
+
+    it('offers sandbox keys inside the sandbox block', () => {
+        const text = 'sandbox:\n\tenabled: true\n\t\ntests:\n\t- cmd: echo hi\n';
+        const labels = complete(text, 2, 1)!.map(i => i.label);
+        expect(labels).toEqual(expect.arrayContaining(['network', 'image']));
+        expect(labels).not.toContain('enabled'); // already present
+    });
+
+    it('offers files/copy inside shared', () => {
+        const text = 'shared:\n\tfiles:\n\t\ta.txt: hi\n\t\ntests:\n\t- cmd: echo hi\n';
+        const labels = complete(text, 3, 1)!.map(i => i.label);
+        expect(labels).toContain('copy');
+        expect(labels).not.toContain('files'); // already present
+    });
+
+    it('offers hook entry keys inside a setup mapping item', () => {
+        const text = 'setup:\n\t- cmd: echo a\n\t  \ntests:\n\t- cmd: echo hi\n';
+        const labels = complete(text, 2, 3)!.map(i => i.label);
+        expect(labels).toEqual(expect.arrayContaining(['env', 'stdin_file', 'timeout']));
+        expect(labels).not.toContain('cmd'); // already present
+    });
+
+    it('offers copy alongside files inside inputs', () => {
+        const text = 'tests:\n\t- cmd: echo hi\n\t  inputs:\n\t\tstdin: hi\n\t\t\n';
+        const labels = complete(text, 4, 2)!.map(i => i.label);
+        expect(labels).toEqual(expect.arrayContaining(['files', 'copy']));
+        expect(labels).not.toContain('stdin'); // already present
+    });
+});

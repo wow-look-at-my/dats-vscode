@@ -23,6 +23,9 @@ vi.mock('vscode', () => {
     return { Range, Diagnostic, DiagnosticSeverity };
 });
 
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
 import { validateDatsDocument } from './validator';
 
 const ERROR = 0;
@@ -631,10 +634,10 @@ describe('setup/teardown command lists', () => {
 
 describe('shared fixtures', () => {
     it('flags shared blocks that declare no files', () => {
-        for (const shared of ['shared: {}\n', 'shared:\n  files: {}\n', 'shared:\n  files: null\n']) {
+        for (const shared of ['shared: {}\n', 'shared:\n  files: {}\n', 'shared:\n  files: null\n', 'shared:\n  copy: {}\n']) {
             const diags = validate(`${shared}tests:\n  - cmd: echo hi\n`);
             expect(diags, shared).toHaveLength(1);
-            expect(diags[0].message).toBe('shared: must declare at least one file under files');
+            expect(diags[0].message).toBe('shared: must declare at least one file under files or copy');
             expect(diags[0].severity).toBe(ERROR);
         }
     });
@@ -656,7 +659,7 @@ describe('shared fixtures', () => {
     it('flags a non-mapping shared value', () => {
         const diags = validate('shared: hello\ntests:\n  - cmd: echo hi\n');
         expect(diags).toHaveLength(1);
-        expect(diags[0].message).toBe('"shared" must be a mapping with a "files" key');
+        expect(diags[0].message).toBe('"shared" must be a mapping with a "files" or "copy" key');
     });
 
     it('flags matrix placeholders in shared file contents', () => {
@@ -799,8 +802,10 @@ describe('{matrix.X} references', () => {
 // Every accept/reject verdict and message below was verified against
 // dats@d76c889 (dats syntax) probe runs.
 describe('outputs.snapshot', () => {
-    it('accepts scalar booleans, including the YAML 1.1 compat spellings the CLI decodes', () => {
-        for (const value of ['true', 'false', 'True', 'TRUE', 'yes', '"yes"', 'y', 'on', 'Off', 'null']) {
+    // yaml-fixed resolves only the core-schema spellings, so yes/y/on/off are
+    // plain strings and the CLI rejects them.
+    it('accepts scalar booleans (core-schema spellings only)', () => {
+        for (const value of ['true', 'false', 'True', 'TRUE', 'null']) {
             const yaml = `tests:\n  - cmd: echo hi\n    outputs:\n      snapshot: ${value}\n`;
             expect(validate(yaml), `snapshot: ${value}`).toEqual([]);
         }
@@ -812,7 +817,7 @@ describe('outputs.snapshot', () => {
             '        stderr: true',
             '        stdout: true\n        stderr: true',
             '        stdout: false\n        stderr: true',
-            '        stdout: On',
+            '        stdout: True',
         ]) {
             const yaml = `tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n${body}\n`;
             expect(validate(yaml), body).toEqual([]);
@@ -824,8 +829,8 @@ describe('outputs.snapshot', () => {
         expect(validate(yaml)).toEqual([]);
     });
 
-    it('flags non-boolean scalars, sequences, and quoted "true" (a string to the CLI)', () => {
-        for (const value of ['"true"', '"TRUE"', '1', '""', '[true]', 'enabled']) {
+    it('flags non-boolean scalars, sequences, quoted "true" and the YAML 1.1 spellings', () => {
+        for (const value of ['"true"', '"TRUE"', '1', '""', '[true]', 'enabled', 'yes', '"yes"', 'y', 'on', 'Off']) {
             const yaml = `tests:\n  - cmd: echo hi\n    outputs:\n      snapshot: ${value}\n`;
             const diags = validate(yaml);
             expect(diags, `snapshot: ${value}`).toHaveLength(1);
@@ -858,6 +863,9 @@ describe('outputs.snapshot', () => {
             ['        stdout: "false"', 'stdout'],
             ['        stdout: [true]', 'stdout'],
             ['        stderr: text', 'stderr'],
+            ['        stderr: no', 'stderr'],
+            ['        stdout: null', 'stdout'],
+            ['        stdout:', 'stdout'],
         ] as const) {
             const yaml = `tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n${body}\n`;
             const diags = validate(yaml);
@@ -872,19 +880,14 @@ describe('outputs.snapshot', () => {
         expect(diags[0].message).toBe('snapshot: stdout must be a boolean');
     });
 
-    it('flags mappings that enable no stream (empty, all-false, or null values)', () => {
-        for (const value of ['{}', '{stdout: false}', '{stdout: null}', '{stderr: no}', '{stdout: false, stderr: false}']) {
+    it('flags mappings that enable no stream (empty or all-false)', () => {
+        for (const value of ['{}', '{stdout: false}', '{stdout: false, stderr: false}']) {
             const yaml = `tests:\n  - cmd: echo hi\n    outputs:\n      snapshot: ${value}\n`;
             const diags = validate(yaml);
             expect(diags, `snapshot: ${value}`).toHaveLength(1);
             expect(diags[0].message).toBe('snapshot: must enable at least one of stdout, stderr');
             expect(diags[0].severity).toBe(ERROR);
         }
-
-        // A stream key with no value decodes to false too
-        const diags = validate('tests:\n  - cmd: echo hi\n    outputs:\n      snapshot:\n        stdout:\n');
-        expect(diags).toHaveLength(1);
-        expect(diags[0].message).toBe('snapshot: must enable at least one of stdout, stderr');
     });
 
     it('does not cascade the enables-nothing error onto entry-level errors (the CLI stops at its first)', () => {
@@ -944,5 +947,212 @@ describe('tab-indented dialect', () => {
         const diags = validate('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\t!files:\n\t\t\t../escape.txt:\n\t\t\t\texists: true\n');
         expect(diags).toHaveLength(1);
         expect(diags[0].message).toContain('must be a relative path that stays inside the test directory');
+    });
+});
+
+// Everything below was checked against the real CLI (`dats syntax` probe runs)
+// on the tab dialect, which is what a .dats file actually looks like.
+describe('file-level sandbox block', () => {
+    it('accepts the scalar and mapping forms', () => {
+        for (const sandbox of ['sandbox: false\n', 'sandbox: true\n', 'sandbox:\n\tenabled: true\n\tnetwork: false\n\timage: alpine:3.20\n']) {
+            expect(validate(`${sandbox}tests:\n\t- cmd: echo hi\n`), sandbox).toEqual([]);
+        }
+    });
+
+    it('flags a value that is neither a boolean nor a mapping', () => {
+        for (const value of ['nope', 'yes', '"true"', '[true]']) {
+            const diags = validate(`sandbox: ${value}\ntests:\n\t- cmd: echo hi\n`);
+            expect(diags, `sandbox: ${value}`).toHaveLength(1);
+            expect(diags[0].message).toBe('sandbox: must be true, false, or a mapping (enabled, network, image)');
+            expect(diags[0].severity).toBe(ERROR);
+        }
+    });
+
+    it('flags a mapping that configures nothing', () => {
+        const diags = validate('sandbox: {}\ntests:\n\t- cmd: echo hi\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('sandbox: mapping must set at least one of enabled, network, image');
+    });
+
+    it('flags unknown sandbox keys', () => {
+        const diags = validate('sandbox:\n\tbogus: true\ntests:\n\t- cmd: echo hi\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('sandbox: unknown key "bogus" (allowed: enabled, network, image)');
+    });
+
+    it('flags non-boolean enabled/network and a non-string image', () => {
+        for (const [body, message] of [
+            ['\tenabled: yes', 'sandbox: enabled must be a boolean'],
+            ['\tnetwork: 1', 'sandbox: network must be a boolean'],
+            ['\timage: 5', 'sandbox: image must be a non-empty string'],
+            ['\timage: ""', 'sandbox: image must be a non-empty string'],
+        ] as const) {
+            const diags = validate(`sandbox:\n${body}\ntests:\n\t- cmd: echo hi\n`);
+            expect(diags, body).toHaveLength(1);
+            expect(diags[0].message).toBe(message);
+        }
+    });
+
+    it('flags a matrix placeholder in the image (the sandbox is resolved once per file)', () => {
+        const diags = validate('sandbox:\n\timage: "img:{matrix.v}"\ntests:\n\t- cmd: echo hi\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('sandbox image: {matrix.v} is not available outside tests');
+    });
+});
+
+describe('copy fixtures (inputs.copy and shared.copy)', () => {
+    it('accepts a copy block, alone or beside files', () => {
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  inputs:\n\t\tcopy:\n\t\t\treal.bin: fixtures/real.bin\n')).toEqual([]);
+        expect(validate('shared:\n\tcopy:\n\t\treal.bin: fixtures/real.bin\ntests:\n\t- cmd: echo hi\n')).toEqual([]);
+        expect(
+            validate('tests:\n\t- cmd: echo hi\n\t  inputs:\n\t\tfiles:\n\t\t\ta.txt: hi\n\t\tcopy:\n\t\t\tb.bin: fixtures/b.bin\n')
+        ).toEqual([]);
+    });
+
+    it('flags a destination that escapes the fixture directory', () => {
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  inputs:\n\t\tcopy:\n\t\t\t../evil.txt: src\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('test 1: copy destination "../evil.txt" must be a relative path that stays inside the fixture directory');
+        expect(diags[0].severity).toBe(ERROR);
+    });
+
+    it('flags an empty or absent source path', () => {
+        for (const source of ['""', '', '"   "']) {
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  inputs:\n\t\tcopy:\n\t\t\tf.txt: ${source}\n`);
+            expect(diags, `source: ${source}`).toHaveLength(1);
+            expect(diags[0].message).toBe('test 1: copy destination "f.txt" must name a non-empty source path');
+        }
+    });
+
+    it('flags a name declared under both files and copy', () => {
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  inputs:\n\t\tfiles:\n\t\t\tf.txt: hi\n\t\tcopy:\n\t\t\tf.txt: fixtures/f\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('test 1: "f.txt" is declared under both files and copy');
+    });
+
+    it('names the test the CLI would name', () => {
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t- cmd: echo bye\n\t  inputs:\n\t\tcopy:\n\t\t\t/abs.txt: src\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('test 2: copy destination "/abs.txt" must be a relative path that stays inside the fixture directory');
+    });
+
+    it('substitutes matrix values into a copy source, and flags an undeclared one', () => {
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  matrix:\n\t\tn: [1, 2]\n\t  inputs:\n\t\tcopy:\n\t\t\tf.bin: fixtures/{matrix.n}.bin\n')).toEqual([]);
+
+        const diags = validate('tests:\n\t- cmd: echo hi\n\t  inputs:\n\t\tcopy:\n\t\t\tf.bin: fixtures/{matrix.n}.bin\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('{matrix.n} is used but the test declares no matrix');
+    });
+
+    it('flags a matrix placeholder in a shared copy source (no instance exists there)', () => {
+        const diags = validate('shared:\n\tcopy:\n\t\tf.bin: fixtures/{matrix.n}.bin\ntests:\n\t- cmd: echo hi\n\t  matrix:\n\t\tn: [1]\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('shared copy "f.bin": {matrix.n} is not available outside tests');
+    });
+});
+
+describe('hook entries in the mapping form', () => {
+    it('accepts cmd with env, stdin_file and timeout', () => {
+        expect(
+            validate('setup:\n\t- cmd: echo a\n\t  timeout: 5s\n\t  stdin_file: in.txt\n\t  env:\n\t\tK: v\ntests:\n\t- cmd: echo hi\n')
+        ).toEqual([]);
+    });
+
+    it('still rejects a lone mapping (only a list item may be one)', () => {
+        const diags = validate('setup:\n\tcmd: echo a\ntests:\n\t- cmd: echo hi\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('setup must be a command string or a list of command strings');
+    });
+
+    it('flags a nested sequence item', () => {
+        const diags = validate('setup:\n\t- - nested\ntests:\n\t- cmd: echo hi\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toBe('setup: command 1 must be a command string or a mapping (cmd, env, stdin_file, timeout)');
+    });
+
+    it('flags an entry with no cmd, and unknown entry keys', () => {
+        const noCmd = validate('setup:\n\t- env:\n\t\tK: v\ntests:\n\t- cmd: echo hi\n');
+        expect(noCmd).toHaveLength(1);
+        expect(noCmd[0].message).toBe('setup: command 1: must set cmd');
+
+        const unknown = validate('teardown:\n\t- cmd: echo a\n\t  bogus: 1\ntests:\n\t- cmd: echo hi\n');
+        expect(unknown).toHaveLength(1);
+        expect(unknown[0].message).toBe('teardown: command 1: unknown key "bogus" (allowed: cmd, env, stdin_file, timeout)');
+    });
+
+    it('flags a non-string env value and a non-mapping env', () => {
+        const nonString = validate('setup:\n\t- cmd: echo a\n\t  env:\n\t\tK: 5\ntests:\n\t- cmd: echo hi\n');
+        expect(nonString).toHaveLength(1);
+        expect(nonString[0].message).toBe('setup: command 1: env: "K" must be a string');
+
+        const nonMapping = validate('setup:\n\t- cmd: echo a\n\t  env: nope\ntests:\n\t- cmd: echo hi\n');
+        expect(nonMapping).toHaveLength(1);
+        expect(nonMapping[0].message).toBe('setup: command 1: env must be a mapping of variable name to value');
+    });
+
+    it('flags an empty stdin_file and a zero timeout', () => {
+        const stdin = validate('setup:\n\t- cmd: echo a\n\t  stdin_file: ""\ntests:\n\t- cmd: echo hi\n');
+        expect(stdin).toHaveLength(1);
+        expect(stdin[0].message).toBe('setup: command 1: stdin_file must be a non-empty string');
+
+        for (const timeout of ['0', '0s']) {
+            const diags = validate(`setup:\n\t- cmd: echo a\n\t  timeout: ${timeout}\ntests:\n\t- cmd: echo hi\n`);
+            expect(diags, `timeout: ${timeout}`).toHaveLength(1);
+            expect(diags[0].message).toBe('setup: command 1: timeout must be greater than 0 (omit it to use the default 30s)');
+        }
+    });
+
+    it('flags matrix placeholders in an entry env value and stdin_file', () => {
+        const env = validate('setup:\n\t- cmd: echo a\n\t  env:\n\t\tK: "{matrix.n}"\ntests:\n\t- cmd: echo hi\n');
+        expect(env).toHaveLength(1);
+        expect(env[0].message).toBe('setup command 1: env "K": {matrix.n} is not available outside tests');
+
+        const stdin = validate('setup:\n\t- cmd: echo a\n\t  stdin_file: "{matrix.n}.txt"\ntests:\n\t- cmd: echo hi\n');
+        expect(stdin).toHaveLength(1);
+        expect(stdin[0].message).toBe('setup command 1: stdin_file: {matrix.n} is not available outside tests');
+    });
+});
+
+describe('heredocs and herestrings are rejected in commands', () => {
+    it('flags them in a test cmd, naming the test', () => {
+        const heredoc = validate('tests:\n\t- cmd: cat <<EOF\n');
+        expect(heredoc).toHaveLength(1);
+        expect(heredoc[0].message).toBe(
+            'test 1: cmd: must not use a shell heredoc (<<WORD) -- write the file and pull it in with inputs.files/inputs.copy or shared.files/shared.copy instead'
+        );
+
+        const herestring = validate('tests:\n\t- cmd: cat <<< hi\n');
+        expect(herestring).toHaveLength(1);
+        expect(herestring[0].message).toBe(
+            'test 1: cmd: must not use a shell herestring (<<<) -- use inputs.stdin (or a pipe within cmd) instead of redirecting from the end of the line'
+        );
+    });
+
+    it('flags them in a hook command', () => {
+        const diags = validate('setup:\n\t- cat <<EOF\ntests:\n\t- cmd: echo hi\n');
+        expect(diags).toHaveLength(1);
+        expect(diags[0].message).toContain('setup: command 1: must not use a shell heredoc (<<WORD)');
+    });
+});
+
+describe('outputs.files exists', () => {
+    it('flags a non-boolean exists (the CLI cannot decode it into a bool)', () => {
+        for (const value of ['yes', '1', '"true"']) {
+            const diags = validate(`tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tfiles:\n\t\t\tf.txt:\n\t\t\t\texists: ${value}\n`);
+            expect(diags, `exists: ${value}`).toHaveLength(1);
+            expect(diags[0].message).toBe('"exists" must be a boolean (dats will refuse to run this file)');
+        }
+        // an absent value decodes to false, which the CLI accepts
+        expect(validate('tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\tfiles:\n\t\t\tf.txt:\n\t\t\t\texists:\n')).toEqual([]);
+    });
+});
+
+describe('the full-feature sample', () => {
+    // testdata/samples/full.dats exercises every construct the CLI accepts and
+    // is verified with `dats syntax` itself. Anything the validator invents,
+    // or any feature it has not caught up with, shows up right here.
+    it('reports nothing on a file the CLI accepts', () => {
+        const text = readFileSync(join(__dirname, '..', 'testdata', 'samples', 'full.dats'), 'utf8');
+        expect(validate(text)).toEqual([]);
     });
 });

@@ -106,6 +106,42 @@ describe('normalizeDats', () => {
         });
     });
 
+    // The CLI reads a plain value to the end of the line; standard YAML would
+    // re-read a ": " inside one as a nested mapping. Verified against
+    // `dats syntax`, which accepts every source below.
+    it('keeps a colon inside a command inside the command', () => {
+        expect(structure('tests:\n\t- cmd: echo \'{"ok": true}\'\n')).toEqual({
+            tests: [{ cmd: 'echo \'{"ok": true}\'' }],
+        });
+        expect(structure('tests:\n\t- cmd: sed -e s/a: b/c/ file\n')).toEqual({
+            tests: [{ cmd: 'sed -e s/a: b/c/ file' }],
+        });
+    });
+
+    it('keeps a trailing comment out of the quoted value', () => {
+        expect(structure('tests:\n\t- cmd: echo a: b # why\n')).toEqual({ tests: [{ cmd: 'echo a: b' }] });
+    });
+
+    it('quotes a value the yaml parser would read as a tag or a sequence', () => {
+        expect(structure('tests:\n\t- cmd: ! grep -q x\n')).toEqual({ tests: [{ cmd: '! grep -q x' }] });
+        expect(structure('tests:\n\t- cmd: - x\n')).toEqual({ tests: [{ cmd: '- x' }] });
+    });
+
+    it('leaves a nested sequence item a sequence (both parsers agree there)', () => {
+        expect(structure('teardown:\n\t- - nested\ntests:\n\t- cmd: echo hi\n')).toEqual({
+            teardown: [['nested']],
+            tests: [{ cmd: 'echo hi' }],
+        });
+    });
+
+    it('leaves a block scalar body alone, colons and dashes included', () => {
+        expect(
+            structure('tests:\n\t- cmd: bash {inputs.s.sh}\n\t  inputs:\n\t\tfiles:\n\t\t\ts.sh: |\n\t\t\t\tkey: value\n\t\t\t\t- item\n')
+        ).toEqual({
+            tests: [{ cmd: 'bash {inputs.s.sh}', inputs: { files: { 's.sh': 'key: value\n- item\n' } } }],
+        });
+    });
+
     it('maps columns back to the source line', () => {
         const dats = 'tests:\n\t- cmd: echo hi\n\t  outputs:\n\t\t!stdout:\n\t\t\t- boom\n';
         const source = normalizeDats(dats);

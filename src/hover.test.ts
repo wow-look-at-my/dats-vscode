@@ -144,3 +144,26 @@ describe('DatsHoverProvider', () => {
         expect(text).toContain('**desc**');
     });
 });
+
+describe('file-level and fixture keys', () => {
+    it('documents the file-level blocks', () => {
+        expect(hoverText(['sandbox:'], 0, 2)).toContain('**sandbox**');
+        expect(hoverText(['sandbox:'], 0, 2)).toContain('opts this file commands');
+        expect(hoverText(['shared:'], 0, 2)).toContain('**shared**');
+        expect(hoverText(['setup:'], 0, 2)).toContain('**setup**');
+        expect(hoverText(['teardown:'], 0, 2)).toContain('**teardown**');
+    });
+
+    it('documents the sandbox mapping keys', () => {
+        expect(hoverText(['\tenabled: true'], 0, 3)).toContain('**enabled**');
+        expect(hoverText(['\tnetwork: false'], 0, 3)).toContain('**network**');
+        expect(hoverText(['\timage: alpine:3.20'], 0, 3)).toContain('**image**');
+    });
+
+    it('documents copy fixtures, stdin_file and matrix', () => {
+        expect(hoverText(['\t\tcopy:'], 0, 3)).toContain('**copy**');
+        expect(hoverText(['\t\tcopy:'], 0, 3)).toContain('writable');
+        expect(hoverText(['\t  stdin_file: in.txt'], 0, 6)).toContain('**stdin_file**');
+        expect(hoverText(['\t  matrix:'], 0, 5)).toContain('**matrix**');
+    });
+});

@@ -22,6 +22,9 @@
     "shared": {
       "$ref": "#/definitions/shared"
     },
+    "sandbox": {
+      "$ref": "#/definitions/sandbox"
+    },
     "tests": {
       "type": "array",
       "minItems": 1,
@@ -33,18 +36,55 @@
   },
   "definitions": {
     "commandList": {
-      "description": "One shell command (string) or an ordered list of shell commands (at least one). Each runs via bash -c like a test cmd, with the inherited environment, no stdin, and no timeout. Only {shared.X} placeholders are expanded; {inputs.X}/{outputs.X} are per-test namespaces and stay verbatim here. Blank commands are rejected at parse time.",
+      "description": "One setup/teardown entry (see hookCommand), or an ordered list of them (at least one).",
+      "oneOf": [
+        { "$ref": "#/definitions/hookCommand" },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/hookCommand" }
+        }
+      ]
+    },
+    "hookCommand": {
+      "description": "A setup/teardown command: a bare command string (no extra env, no stdin, the default 30s timeout), or a mapping with cmd plus optional env, stdin_file, and timeout. Runs via bash -c like a test cmd. cmd and env values expand {shared.X} only; {inputs.X}/{outputs.X} are per-test namespaces and stay verbatim here. Blank commands are rejected at parse time, as is a shell heredoc (<<WORD) -- write the file and pull it in with shared.files/shared.copy instead -- and a herestring (<<<), which should be inputs.stdin (or stdin_file) or a pipe instead.",
       "oneOf": [
         {
           "type": "string",
           "minLength": 1
         },
         {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "string",
-            "minLength": 1
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cmd"],
+          "properties": {
+            "cmd": {
+              "type": "string",
+              "minLength": 1
+            },
+            "env": {
+              "type": "object",
+              "description": "KEY=VALUE entries added to this command's environment; values expand {shared.X} only.",
+              "additionalProperties": { "type": "string" }
+            },
+            "stdin_file": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A host file whose raw content is piped to the command's stdin, unexpanded. A relative path resolves against the directory holding this .dats file."
+            },
+            "timeout": {
+              "description": "This entry's own timeout bound, in place of the default (30s). An integer number of seconds, or a Go duration string (e.g. \"500ms\", \"2s\"); either form must be greater than 0 -- there is no way to spell \"no timeout\" for a hook command.",
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]+$|^([0-9]+(\\.[0-9]+)?(ns|us|µs|μs|ms|s|m|h))+$"
+                }
+              ]
+            }
           }
         }
       ]
@@ -52,19 +92,61 @@
     "shared": {
       "type": "object",
       "description": "File-level shared fixtures, written once into the file's shared directory before setup runs. Tests address them with {shared.X} placeholders and should treat them as read-only.",
-      "required": ["files"],
       "additionalProperties": false,
+      "anyOf": [
+        {"required": ["files"]},
+        {"required": ["copy"]}
+      ],
       "properties": {
         "files": {
           "type": "object",
           "minProperties": 1,
-          "description": "Shared fixture files to create once per file, mapping filename to content (at least one). Contents go through {shared.X} placeholder expansion only. File names must be relative paths that stay inside the shared directory (no \"..\" or absolute paths; rejected at parse time); nested paths like \"sub/file.txt\" are allowed.",
+          "description": "Shared fixture files to create once per file, mapping filename to content. Contents go through {shared.X} placeholder expansion only. File names must be relative paths that stay inside the shared directory (no \"..\" or absolute paths; rejected at parse time); nested paths like \"sub/file.txt\" are allowed. The shared block must declare at least one entry across files and copy combined; a name may appear in only one of the two.",
           "additionalProperties": {
             "type": "string",
             "description": "File content ({shared.X} placeholders are expanded; {inputs.X}/{outputs.X} stay verbatim)"
           }
+        },
+        "copy": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "Host files to copy once per file into the shared directory, writable. Maps destination filename to a host source path; a relative source resolves against the directory holding this .dats file. Destination names follow the same locality rule as files and must not also appear there. {matrix.X} is not substituted here.",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Host source path to copy from (relative paths resolve against the .dats file's directory)"
+          }
         }
       }
+    },
+    "sandbox": {
+      "description": "File-level sandbox settings for every command this file runs (its tests AND its setup/teardown hooks). The CLI sandboxes commands by default (--sandbox=auto: bubblewrap, falling back to docker); this block can narrow that choice for one file, never widen it. Write `false` to opt the file out entirely -- the declarative counterpart of --no-sandbox, for files whose commands genuinely need the host. Under --sandbox=none the whole block is inert.",
+      "oneOf": [
+        {
+          "type": "boolean",
+          "description": "false opts this file out of sandboxing; true is the explicit opt-in, identical to omitting the key"
+        },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether this file's commands are sandboxed (default true). false is the same opt-out as `sandbox: false`."
+            },
+            "network": {
+              "type": "boolean",
+              "description": "Whether sandboxed commands keep network access (default true). false runs them in an empty network namespace (bwrap) or with --network none (docker)."
+            },
+            "image": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Container image the docker backend runs this file's commands in, overriding --sandbox-image. Ignored by the bwrap backend, which uses the host's own filesystem. The image must provide bash."
+            }
+          }
+        }
+      ]
     },
     "test": {
       "type": "object",
@@ -77,7 +159,7 @@
         },
         "cmd": {
           "type": "string",
-          "description": "Command to execute (via bash -c). {inputs.X} expands to the absolute path of the declared input file X; {outputs.X} expands to an absolute path in the test's private outputs directory (no outputs.files check required); {shared.X} expands to an absolute path in the file's shared directory (no declaration required). The same expansion is applied to inputs.files contents. When the test declares a matrix, {matrix.X} is substituted first (plain text, one instance per value combination)."
+          "description": "Command to execute (via bash -c). {inputs.X} expands to the absolute path of the declared input file X; {outputs.X} expands to an absolute path in the test's private outputs directory (no outputs.files check required); {shared.X} expands to an absolute path in the file's shared directory (no declaration required). The same expansion is applied to inputs.files contents. When the test declares a matrix, {matrix.X} is substituted first (plain text, one instance per value combination). A shell heredoc (<<WORD, <<-WORD, <<~WORD) is rejected at parse time -- write the file and pull it in with inputs.files/inputs.copy or shared.files/shared.copy instead -- and so is a herestring (<<<), which should be inputs.stdin or a pipe instead."
         },
         "exit": {
           "description": "Expected exit code (0-255, bare or quoted) or exit code name (default 0)",
@@ -150,10 +232,19 @@
         },
         "files": {
           "type": "object",
-          "description": "Fixture files to create before running, mapping filename to content. Contents go through the same {inputs.X}/{outputs.X}/{shared.X} placeholder expansion as cmd. File names must be relative paths that stay inside the test directory (no \"..\" or absolute paths; rejected at parse time); nested paths like \"sub/file.txt\" are allowed.",
+          "description": "Fixture files to create before running, mapping filename to content. Contents go through the same {inputs.X}/{outputs.X}/{shared.X} placeholder expansion as cmd. File names must be relative paths that stay inside the test directory (no \"..\" or absolute paths; rejected at parse time); nested paths like \"sub/file.txt\" are allowed. A name must not also appear under copy.",
           "additionalProperties": {
             "type": "string",
             "description": "File content ({inputs.X}/{outputs.X}/{shared.X} placeholders are expanded)"
+          }
+        },
+        "copy": {
+          "type": "object",
+          "description": "Host files to copy into the test's input directory before running, writable. Maps destination filename to a host source path; a relative source resolves against the directory holding this .dats file, with {matrix.X} substituted first when the test declares a matrix. Destination names follow the same locality rule as files and must not also appear there.",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Host source path to copy from (relative paths resolve against the .dats file's directory; {matrix.X} substitutes first)"
           }
         },
         "env": {

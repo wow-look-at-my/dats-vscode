@@ -61,9 +61,9 @@ validation, and can be wired into a YAML language server manually. When the runn
 schema changes, re-copy it here; it must stay byte-identical to the runner's master copy.
 
 Current copy: synced from
-[wow-look-at-my/dats@d76c889](https://github.com/wow-look-at-my/dats/commit/d76c88907078eeae0ce78a02f2bf84ca18cdc164)
-(adds `outputs.snapshot` golden-file assertions, blessed with the runner's `--update` flag,
-merged as [dats#24](https://github.com/wow-look-at-my/dats/pull/24)).
+[wow-look-at-my/dats@5b67ca8](https://github.com/wow-look-at-my/dats/commit/5b67ca8b511c88e560bc34b6b05e077460be1413)
+(the file-level `sandbox` block, hook commands in the mapping form, and `inputs.copy` /
+`shared.copy` fixtures).
 
 ## Links
 
